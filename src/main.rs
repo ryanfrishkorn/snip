@@ -1,4 +1,5 @@
 use chrono::{DateTime, FixedOffset};
+use clap::Command;
 use rusqlite::{Connection, Result};
 use rust_stemmers::{Algorithm, Stemmer};
 use std::error::Error;
@@ -15,8 +16,17 @@ struct Snip {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let db_file_default = ".snip.sqlite3".to_string();
+    let cmd = Command::new("snip-rs")
+        .bin_name("snip-rs")
+        .subcommand_required(true)
+        .subcommand(clap::command!("ls").about("List all snips"))
+        .subcommand(clap::command!("stem").about("Stem word fron stdin"))
+        .subcommand(clap::command!("get").about("Print first snip in database"));
 
+    let mut m = cmd.get_matches();
+    let (action, _) = m.remove_subcommand().expect("required");
+
+    let db_file_default = ".snip.sqlite3".to_string();
     let home_dir = match env::var("HOME") {
         Ok(v) => v,
         Err(e) => panic!("{}", e),
@@ -24,19 +34,28 @@ fn main() -> Result<(), Box<dyn Error>> {
     let db_path = env::var("SNIP_DB").unwrap_or(format!("{}/{}", home_dir, db_file_default));
     let conn = Connection::open(db_path)?;
 
-    match list_snips(&conn) {
-        Ok(_) => (),
-        Err(e) => panic!("{}", e),
+    match action.as_str() {
+        "get" => {
+            let s_first = match get_first_snip(&conn) {
+                Ok(v) => v,
+                Err(e) => panic!("{}", e),
+            };
+            println!("first snip: {:?}", s_first);
+        }
+        "help" => {
+            println!("help");
+        }
+        "ls" => {
+            list_snips(&conn).expect("could not list snips");
+        }
+        "stem" => {
+            let term = read_data_from_stdin()?;
+            println!("{}", stem_something(term.as_str()));
+        }
+        _ => {
+            println!("action: {}", action);
+        }
     }
-
-    let word = read_data_from_stdin()?.trim_end().to_string();
-    let stem = stem_something(&word);
-    println!("Stem word: {} -> {}", word, stem);
-    let s_first = match get_first_snip(&conn) {
-        Ok(v) => v,
-        Err(e) => panic!("{}", e),
-    };
-    println!("first snip: {:?}", s_first);
 
     Ok(())
 }
@@ -99,7 +118,6 @@ fn list_snips(conn: &Connection) -> Result<(), Box<dyn Error>> {
         let s = snip.unwrap();
         let id = Uuid::parse_str(&s.uuid)?;
 
-        print!("{} - ", chrono::Utc::now());
         println!("{} {} {}", split_uuid(id)[0], s.timestamp, s.name);
     }
 
@@ -115,7 +133,7 @@ fn stem_something(s: &str) -> String {
 fn read_data_from_stdin() -> Result<String, io::Error> {
     let mut buffer = String::new();
     io::stdin().read_line(&mut buffer)?;
-    Ok(buffer)
+    Ok(buffer.trim_end().to_owned())
 }
 
 fn split_uuid(uuid: Uuid) -> Vec<String> {
