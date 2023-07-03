@@ -1,13 +1,11 @@
 use chrono::{DateTime, FixedOffset};
-use clap::Command;
+use clap::{arg, Command};
 use rusqlite::{Connection, Result};
 use rust_stemmers::{Algorithm, Stemmer};
 use std::error::Error;
 use std::{env, io};
 use uuid::Uuid;
 
-#[allow(dead_code)]
-#[derive(Debug)]
 struct Snip {
     uuid: String,
     name: String,
@@ -18,13 +16,18 @@ struct Snip {
 fn main() -> Result<(), Box<dyn Error>> {
     let cmd = Command::new("snip-rs")
         .bin_name("snip-rs")
+        .arg_required_else_help(true)
         .subcommand_required(true)
         .subcommand(clap::command!("ls").about("List all snips"))
-        .subcommand(clap::command!("stem").about("Stem word fron stdin"))
+        .subcommand(
+            Command::new("stem")
+                .about("Stem word from stdin")
+                .arg(arg!(<word> "The word to stem"))
+                .arg_required_else_help(true),
+        )
         .subcommand(clap::command!("get").about("Print first snip in database"));
 
-    let mut m = cmd.get_matches();
-    let (action, _) = m.remove_subcommand().expect("required");
+    let matches = cmd.get_matches();
 
     let db_file_default = ".snip.sqlite3".to_string();
     let home_dir = match env::var("HOME") {
@@ -34,26 +37,33 @@ fn main() -> Result<(), Box<dyn Error>> {
     let db_path = env::var("SNIP_DB").unwrap_or(format!("{}/{}", home_dir, db_file_default));
     let conn = Connection::open(db_path)?;
 
-    match action.as_str() {
-        "get" => {
-            let s_first = match get_first_snip(&conn) {
+    // process all subcommands as in: https://docs.rs/clap/latest/clap/_derive/_cookbook/git/index.html
+    match matches.subcommand() {
+        Some(("get", _)) => {
+            let s = match get_first_snip(&conn) {
                 Ok(v) => v,
                 Err(e) => panic!("{}", e),
             };
-            println!("first snip: {:?}", s_first);
+            println!(
+                "first snip: uuid: {} timestamp: {} name: {} text: {}",
+                s.uuid, s.timestamp, s.name, s.text
+            );
         }
-        "help" => {
+        Some(("help", _)) => {
             println!("help");
         }
-        "ls" => {
+        Some(("ls", _)) => {
             list_snips(&conn).expect("could not list snips");
         }
-        "stem" => {
-            let term = read_data_from_stdin()?;
-            println!("{}", stem_something(term.as_str()));
+        Some(("stem", sub_matches)) => {
+            let term = match sub_matches.get_one::<String>("word") {
+                Some(v) => v.to_owned(),
+                None => read_data_from_stdin()?,
+            };
+            println!("{} -> {}", term, stem_something(&term));
         }
         _ => {
-            println!("action: {}", action);
+            println!("invalid subcommand");
         }
     }
 
@@ -129,7 +139,6 @@ fn stem_something(s: &str) -> String {
     stemmer.stem(s.to_lowercase().as_str()).to_string()
 }
 
-#[allow(dead_code)]
 fn read_data_from_stdin() -> Result<String, io::Error> {
     let mut buffer = String::new();
     io::stdin().read_line(&mut buffer)?;
