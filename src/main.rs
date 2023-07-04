@@ -94,9 +94,7 @@ fn read_lines_from_stdin() -> String {
 
         match bytes_read {
             Ok(v) => {
-                // no bytes read
                 match v {
-                    v if v == 0 => break,
                     v if v > 0 => data = data + &buf.to_owned(),
                     _ => break,
                 }
