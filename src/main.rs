@@ -1,5 +1,6 @@
 use chrono::{DateTime, FixedOffset};
 use clap::{arg, Command};
+use regex::Regex;
 use rusqlite::{Connection, Result};
 use rust_stemmers::{Algorithm, Stemmer};
 use std::error::Error;
@@ -19,6 +20,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         .arg_required_else_help(true)
         .subcommand_required(true)
         .subcommand(clap::command!("ls").about("List all snips"))
+        .subcommand(
+            clap::command!("split")
+                .about("Split a string into words")
+                .arg(arg!([string] "The string to split"))
+                .arg_required_else_help(false),
+        )
         .subcommand(
             Command::new("stem")
                 .about("Stem word from stdin")
@@ -62,12 +69,68 @@ fn main() -> Result<(), Box<dyn Error>> {
             };
             println!("{} -> {}", term, stem_something(&term));
         }
+        Some(("split", sub_matches)) => {
+            let input = match sub_matches.get_one::<String>("string") {
+                Some(v) => v.to_owned(),
+                None => read_lines_from_stdin(),
+            };
+            println!("{:?}", split_words(&input));
+        }
         _ => {
             println!("invalid subcommand");
         }
     }
 
     Ok(())
+}
+
+fn read_lines_from_stdin() -> String {
+    let mut buf = String::new();
+    let mut data = String::new(); 
+
+    let mut bytes_read;
+    loop {
+        bytes_read = io::stdin().read_line(&mut buf);
+
+        match bytes_read {
+            Ok(v) => {
+                // no bytes read
+                match v {
+                    v if v == 0 => break,
+                    v if v > 0 => data = data + &buf.to_owned(),
+                    _ => break,
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    data
+}
+
+fn split_words(s: &str) -> Vec<&str> {
+    let input = s.trim_start().trim_end();
+
+    let pattern = Regex::new(r"(?m)\s+").unwrap();
+    let words = pattern.split(input);
+    let mut output: Vec<&str> = Vec::new();
+    for w in words.into_iter() {
+        output.push(strip_punctuation(w));
+    }
+    output
+}
+
+fn strip_punctuation(s: &str) -> &str{
+    let chars_strip = &['.', ',', '!', '?', '"', '[', ']', '(', ')'];
+
+    let mut clean = match s.strip_prefix(chars_strip) {
+        Some(v) => v,
+        None => s,
+    };
+    clean = match clean.strip_suffix(chars_strip) {
+        Some(v) => v,
+        None => clean,
+    };
+    clean
 }
 
 fn get_first_snip(conn: &Connection) -> Result<Snip, Box<dyn Error>> {
@@ -147,4 +210,36 @@ fn read_data_from_stdin() -> Result<String, io::Error> {
 
 fn split_uuid(uuid: Uuid) -> Vec<String> {
     uuid.to_string().split('-').map(|s| s.to_string()).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn split_mutiline_string() -> Result<()> {
+        let s = r#"Lorem ipsum (dolor) sit amet, consectetur
+second line?
+
+that was an [empty] line.
+"#;
+        let expect: Vec<&str> = vec![
+            "Lorem",
+            "ipsum",
+            "dolor",
+            "sit",
+            "amet",
+            "consectetur",
+            "second",
+            "line",
+            "that",
+            "was",
+            "an",
+            "empty",
+            "line",
+        ];
+        let split = split_words(s);
+        assert_eq!(expect, split);
+        Ok(())
+    }
 }
