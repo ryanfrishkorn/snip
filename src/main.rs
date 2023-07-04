@@ -68,7 +68,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("help");
         }
         Some(("ls", _)) => {
-            list_snips(&conn).expect("could not list snips");
+            list_snips(&conn, true).expect("could not list snips");
         }
         Some(("stem", sub_matches)) => {
             let term = match sub_matches.get_one::<String>("word") {
@@ -259,7 +259,7 @@ fn get_first_snip(conn: &Connection) -> Result<Snip, Box<dyn Error>> {
     )))
 }
 
-fn list_snips(conn: &Connection) -> Result<(), Box<dyn Error>> {
+fn list_snips(conn: &Connection, full: bool) -> Result<(), Box<dyn Error>> {
     let mut stmt = match conn.prepare("SELECT uuid, name, timestamp, data from snip") {
         Ok(v) => v,
         Err(e) => panic!("{}", e),
@@ -285,7 +285,11 @@ fn list_snips(conn: &Connection) -> Result<(), Box<dyn Error>> {
         let s = snip.unwrap();
         let id = Uuid::parse_str(&s.uuid)?;
 
-        println!("{} {} {}", split_uuid(id)[0], s.timestamp, s.name);
+        match full {
+            true => println!("{} {} {}", s.uuid, s.timestamp, s.name),
+            false => println!("{} {} {}", split_uuid(id)[0], s.timestamp, s.name),
+        }
+        // println!("{} {} {}", split_uuid(id)[0], s.timestamp, s.name);
     }
 
     Ok(())
