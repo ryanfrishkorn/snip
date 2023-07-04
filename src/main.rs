@@ -74,7 +74,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Some(v) => v.to_owned(),
                 None => read_lines_from_stdin(),
             };
-            println!("{:?}", split_words(&input));
+            println!(
+                "{:?}",
+                split_words(&input)
+                    .into_iter()
+                    .map(|x| x.to_lowercase())
+                    .collect::<Vec<String>>()
+            );
         }
         _ => {
             println!("invalid subcommand");
@@ -86,19 +92,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn read_lines_from_stdin() -> String {
     let mut buf = String::new();
-    let mut data = String::new(); 
+    let mut data = String::new();
 
     let mut bytes_read;
     loop {
         bytes_read = io::stdin().read_line(&mut buf);
 
         match bytes_read {
-            Ok(v) => {
-                match v {
-                    v if v > 0 => data = data + &buf.to_owned(),
-                    _ => break,
-                }
-            }
+            Ok(v) => match v {
+                v if v > 0 => data = data + &buf.to_owned(),
+                _ => break,
+            },
             Err(_) => break,
         }
     }
@@ -110,15 +114,16 @@ fn split_words(s: &str) -> Vec<&str> {
 
     let pattern = Regex::new(r"(?m)\s+").unwrap();
     let words = pattern.split(input);
-    let mut output: Vec<&str> = Vec::new();
+    /*
     for w in words.into_iter() {
         output.push(strip_punctuation(w));
     }
-    output
+    */
+    words.collect()
 }
 
-fn strip_punctuation(s: &str) -> &str{
-    let chars_strip = &['.', ',', '!', '?', '"', '[', ']', '(', ')'];
+fn strip_punctuation(s: &str) -> &str {
+    let chars_strip = &['.', ',', '!', '?', '"', '\'', '[', ']', '(', ')'];
 
     let mut clean = match s.strip_prefix(chars_strip) {
         Some(v) => v,
@@ -224,17 +229,17 @@ that was an [empty] line.
         let expect: Vec<&str> = vec![
             "Lorem",
             "ipsum",
-            "dolor",
+            "(dolor)",
             "sit",
-            "amet",
+            "amet,",
             "consectetur",
             "second",
-            "line",
+            "line?",
             "that",
             "was",
             "an",
-            "empty",
-            "line",
+            "[empty]",
+            "line.",
         ];
         let split = split_words(s);
         assert_eq!(expect, split);
