@@ -317,6 +317,8 @@ fn split_uuid(uuid: Uuid) -> Vec<String> {
 mod tests {
     use super::*;
 
+    const DB_PATH: &str = "snip.enwiki.partial.sqlite3";
+
     #[test]
     fn split_mutiline_string() -> Result<()> {
         let s = r#"Lorem ipsum (dolor) sit amet, consectetur
@@ -346,9 +348,8 @@ that was an [empty] line.
 
     #[test]
     fn test_get_from_uuid() -> Result<()> {
-        let db_path = "snip.enwiki.partial.sqlite3";
         let id_str = "ba652e2d-b248-4bcc-b36e-c26c0d0e8002";
-        let conn = Connection::open(db_path)?;
+        let conn = Connection::open(DB_PATH)?;
 
         if let Ok(s) = get_from_uuid(&conn, id_str) {
             println!("{} {} {}", s.uuid, s.timestamp.to_string(), s.name);
