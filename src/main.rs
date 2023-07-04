@@ -62,7 +62,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Ok(v) => v,
                 Err(e) => panic!("{}", e),
             };
-            println!("uuid: {}\nname: {}\ntimestamp: {}\n----\n{}\n----", s.uuid, s.name, s.timestamp, s.text);
+            println!(
+                "uuid: {}\nname: {}\ntimestamp: {}\n----\n{}\n----",
+                s.uuid, s.name, s.timestamp, s.text
+            );
         }
         Some(("help", _)) => {
             println!("help");
