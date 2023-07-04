@@ -32,7 +32,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .arg(arg!(<word> "The word to stem"))
                 .arg_required_else_help(true),
         )
-        .subcommand(clap::command!("get").about("Print first snip in database"));
+        // .subcommand(clap::command!("get").about("Print first snip in database"))
+        .subcommand(
+            Command::new("get")
+                .about("Get from uuid")
+                .arg(arg!(<uuid> "The uuid of item"))
+                .arg_required_else_help(true),
+        )
+        .subcommand(Command::new("index").about("Reindex the database"));
 
     let matches = cmd.get_matches();
 
@@ -46,15 +53,16 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // process all subcommands as in: https://docs.rs/clap/latest/clap/_derive/_cookbook/git/index.html
     match matches.subcommand() {
-        Some(("get", _)) => {
-            let s = match get_first_snip(&conn) {
+        Some(("get", sub_matches)) => {
+            let id_str = match sub_matches.get_one::<String>("uuid") {
+                Some(v) => v,
+                None => panic!("{}", "need uuid"),
+            };
+            let s = match get_from_uuid(&conn, id_str) {
                 Ok(v) => v,
                 Err(e) => panic!("{}", e),
             };
-            println!(
-                "first snip: uuid: {} timestamp: {} name: {} text: {}",
-                s.uuid, s.timestamp, s.name, s.text
-            );
+            println!("{} {} {}\n----\n{}\n", s.uuid, s.timestamp, s.name, s.text);
         }
         Some(("help", _)) => {
             println!("help");
@@ -82,10 +90,97 @@ fn main() -> Result<(), Box<dyn Error>> {
                     .collect::<Vec<String>>()
             );
         }
+        Some(("index", _sub_matches)) => {
+            create_index_table(&conn)?;
+            index_all_items(&conn)?;
+        }
         _ => {
             println!("invalid subcommand");
         }
     }
+
+    Ok(())
+}
+
+fn create_index_table(conn: &Connection) -> Result<()> {
+    let mut stmt = conn.prepare("CREATE TABLE IF NOT EXISTS snip_index_rs(term TEXT, uuid TEXT, count INTEGER, positions TEXT)")?;
+    stmt.raw_execute()?;
+
+    Ok(())
+}
+
+fn get_from_uuid(conn: &Connection, id_str: &str) -> Result<Snip, Box<dyn Error>> {
+    let mut stmt = conn.prepare("SELECT uuid, timestamp, name, data FROM snip WHERE uuid = :id")?;
+
+    let query_iter = stmt.query_map(&[(":id", &id_str)], |row| {
+        let ts: String = row.get(1)?;
+        // let ts_parsed = DateTime::parse_from_rfc3339(ts.as_str())?;
+        let ts_parsed;
+        match DateTime::parse_from_rfc3339(ts.as_str()) {
+            Ok(v) => ts_parsed = v,
+            Err(e) => {
+                panic!("{}", e)
+            }
+        };
+
+        Ok(Snip {
+            uuid: row.get(0)?,
+            name: row.get(2)?,
+            timestamp: ts_parsed,
+            text: row.get(3)?,
+        })
+    })?;
+
+    for snip in query_iter {
+        if let Ok(s) = snip {
+            return Ok(s);
+        }
+    }
+
+    Err(Box::new(io::Error::new(
+        io::ErrorKind::NotFound,
+        "not found",
+    )))
+}
+
+fn index_all_items(conn: &Connection) -> Result<(), Box<dyn Error>> {
+    // iterate through snips
+    let mut stmt = conn.prepare("SELECT uuid, timestamp, name, data FROM snip")?;
+
+    let query_iter = stmt.query_map([], |row| {
+        let ts: String = row.get(1)?;
+        // let ts_parsed = DateTime::parse_from_rfc3339(ts.as_str())?;
+        let ts_parsed;
+        match DateTime::parse_from_rfc3339(ts.as_str()) {
+            Ok(v) => ts_parsed = v,
+            Err(e) => {
+                println!("ts: {}", ts);
+                panic!("{}", e)
+            }
+        };
+
+        Ok(Snip {
+            uuid: row.get(0)?,
+            name: row.get(2)?,
+            timestamp: ts_parsed,
+            text: row.get(3)?,
+        })
+    })?;
+
+    for snip in query_iter {
+        let s = snip.unwrap();
+        index_item(&conn, &s)?;
+    }
+
+    // obtain stem
+    // perform analysis
+    // write to new database index
+    Ok(())
+}
+
+fn index_item(_conn: &Connection, s: &Snip) -> Result<(), Box<dyn Error>> {
+    let _text_stemmed = stem_something(s.text.as_str());
+    // println!("{}", text_stemmed);
 
     Ok(())
 }
@@ -113,15 +208,10 @@ fn split_words(s: &str) -> Vec<&str> {
     let input = s.trim_start().trim_end();
 
     let pattern = Regex::new(r"(?m)\s+").unwrap();
-    let words = pattern.split(input);
-    /*
-    for w in words.into_iter() {
-        output.push(strip_punctuation(w));
-    }
-    */
-    words.collect()
+    pattern.split(input).collect()
 }
 
+#[allow(dead_code)]
 fn strip_punctuation(s: &str) -> &str {
     let chars_strip = &['.', ',', '!', '?', '"', '\'', '[', ']', '(', ')'];
 
@@ -136,6 +226,7 @@ fn strip_punctuation(s: &str) -> &str {
     clean
 }
 
+#[allow(dead_code)]
 fn get_first_snip(conn: &Connection) -> Result<Snip, Box<dyn Error>> {
     let mut stmt = match conn.prepare("SELECT uuid, name, timestamp, data FROM snip LIMIT 1") {
         Ok(v) => v,
@@ -244,5 +335,18 @@ that was an [empty] line.
         let split = split_words(s);
         assert_eq!(expect, split);
         Ok(())
+    }
+
+    #[test]
+    fn test_get_from_uuid() -> Result<()> {
+        let db_path = "snip.enwiki.partial.sqlite3";
+        let id_str = "ba652e2d-b248-4bcc-b36e-c26c0d0e8002";
+        let conn = Connection::open(db_path)?;
+
+        if let Ok(s) = get_from_uuid(&conn, id_str) {
+            println!("{} {} {}", s.uuid, s.timestamp.to_string(), s.name);
+            return Ok(());
+        }
+        panic!("{}", "could not get snip from uuid");
     }
 }
