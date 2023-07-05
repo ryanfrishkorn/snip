@@ -5,6 +5,7 @@ use rusqlite::{Connection, Result};
 use rust_stemmers::{Algorithm, Stemmer};
 use std::error::Error;
 use std::{env, io};
+use std::io::ErrorKind;
 use uuid::Uuid;
 
 struct Snip {
@@ -58,7 +59,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Some(v) => v,
                 None => panic!("{}", "need uuid"),
             };
-            let s = match get_from_uuid(&conn, id_str) {
+            // search for unique uuid to allow partial string arg
+            let id_str_full = match search_uuid(&conn, id_str) {
+                Ok(v) => v,
+                Err(e) => panic!("{}", e),
+            };
+            let s = match get_from_uuid(&conn, &id_str_full.to_string()) {
                 Ok(v) => v,
                 Err(e) => panic!("{}", e),
             };
@@ -112,6 +118,37 @@ fn create_index_table(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn search_uuid(conn: &Connection, id_partial: &str) -> Result<Uuid, Box<dyn Error>> {
+    let mut stmt = conn.prepare("SELECT uuid from snip WHERE uuid LIKE :id LIMIT 2")?;
+    let id_partial_fuzzy = format!("{}{}{}", "%", id_partial, "%");
+
+    let query_iter = stmt.query_map(&[(":id", &id_partial_fuzzy)], |row| {
+        let id_str = row.get(0)?;
+        Ok(id_str)
+    })?;
+
+    // return only if a singular result is matched
+    let mut id_found = "".to_string();
+    let mut first_run = true;
+    let err_not_found = Box::new(io::Error::new(ErrorKind::NotFound, "could not find unique uuid match"));
+    for id in query_iter {
+        if first_run {
+            first_run = false;
+            id_found = id.unwrap();
+        } else {
+            return Err(err_not_found);
+        }
+    }
+
+    if !id_found.is_empty() {
+        return match Uuid::parse_str(&id_found) {
+            Ok(v) => Ok(v),
+            Err(e) => Err(Box::new(e)),
+        }
+    }
+    Err(err_not_found)
+}
+
 fn get_from_uuid(conn: &Connection, id_str: &str) -> Result<Snip, Box<dyn Error>> {
     let mut stmt = conn.prepare("SELECT uuid, timestamp, name, data FROM snip WHERE uuid = :id")?;
 
@@ -134,14 +171,12 @@ fn get_from_uuid(conn: &Connection, id_str: &str) -> Result<Snip, Box<dyn Error>
         })
     })?;
 
-    for snip in query_iter {
-        if let Ok(s) = snip {
-            return Ok(s);
-        }
+    if let Some(s) = query_iter.flatten().next() {
+        return Ok(s);
     }
 
     Err(Box::new(io::Error::new(
-        io::ErrorKind::NotFound,
+        ErrorKind::NotFound,
         "not found",
     )))
 }
@@ -172,7 +207,7 @@ fn index_all_items(conn: &Connection) -> Result<(), Box<dyn Error>> {
 
     for snip in query_iter {
         let s = snip.unwrap();
-        index_item(&conn, &s)?;
+        index_item(conn, &s)?;
     }
 
     // obtain stem
@@ -227,39 +262,6 @@ fn strip_punctuation(s: &str) -> &str {
         None => clean,
     };
     clean
-}
-
-#[allow(dead_code)]
-fn get_first_snip(conn: &Connection) -> Result<Snip, Box<dyn Error>> {
-    let mut stmt = match conn.prepare("SELECT uuid, name, timestamp, data FROM snip LIMIT 1") {
-        Ok(v) => v,
-        Err(e) => return Err(Box::new(e)),
-    };
-
-    let mut query_iter = stmt.query_map([], |row| {
-        // parse timestamp
-        let ts: String = row.get(2)?;
-        let ts_parsed = match DateTime::parse_from_rfc3339(ts.as_str()) {
-            Ok(v) => v,
-            Err(e) => panic!("{}", e),
-        };
-
-        Ok(Snip {
-            uuid: row.get(0)?,
-            name: row.get(1)?,
-            timestamp: ts_parsed,
-            text: row.get(3)?,
-        })
-    })?;
-
-    if let Some(s) = query_iter.next() {
-        return Ok(s.unwrap());
-    }
-
-    Err(Box::new(std::io::Error::new(
-        io::ErrorKind::NotFound,
-        "damn",
-    )))
 }
 
 fn list_snips(conn: &Connection, full: bool) -> Result<(), Box<dyn Error>> {
@@ -356,5 +358,23 @@ that was an [empty] line.
             return Ok(());
         }
         panic!("{}", "could not get snip from uuid");
+    }
+
+    #[test]
+    fn test_search_uuid() -> Result<()> {
+        let id_str_full = "ba652e2d-b248-4bcc-b36e-c26c0d0e8002";
+        let id_str_part = "ba652e2d-b";
+        let expect = match Uuid::parse_str(id_str_full) {
+            Ok(v) => v,
+            Err(e) => panic!("{}", e),
+        };
+        let conn = Connection::open(DB_PATH)?;
+
+        let id = search_uuid(&conn, id_str_part);
+        match id {
+            Ok(v) => assert_eq!(expect, v),
+            Err(e) => panic!("{}", e),
+        }
+        Ok(())
     }
 }
