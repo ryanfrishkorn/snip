@@ -104,7 +104,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             index_all_items(&conn)?;
         }
         _ => {
-            println!("invalid subcommand");
+            eprintln!("subcommand processing error");
+            std::process::exit(1);
         }
     }
 
