@@ -82,7 +82,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some(("stem", sub_matches)) => {
             let term = match sub_matches.get_one::<String>("word") {
                 Some(v) => v.to_owned(),
-                None => read_data_from_stdin()?,
+                None => read_line_from_stdin()?,
             };
             println!("{} -> {}", term, stem_something(&term));
         }
@@ -117,37 +117,6 @@ fn create_index_table(conn: &Connection) -> Result<()> {
     stmt.raw_execute()?;
 
     Ok(())
-}
-
-fn search_uuid(conn: &Connection, id_partial: &str) -> Result<Uuid, Box<dyn Error>> {
-    let mut stmt = conn.prepare("SELECT uuid from snip WHERE uuid LIKE :id LIMIT 2")?;
-    let id_partial_fuzzy = format!("{}{}{}", "%", id_partial, "%");
-
-    let query_iter = stmt.query_map(&[(":id", &id_partial_fuzzy)], |row| {
-        let id_str = row.get(0)?;
-        Ok(id_str)
-    })?;
-
-    // return only if a singular result is matched
-    let mut id_found = "".to_string();
-    let mut first_run = true;
-    let err_not_found = Box::new(io::Error::new(ErrorKind::NotFound, "could not find unique uuid match"));
-    for id in query_iter {
-        if first_run {
-            first_run = false;
-            id_found = id.unwrap();
-        } else {
-            return Err(err_not_found);
-        }
-    }
-
-    if !id_found.is_empty() {
-        return match Uuid::parse_str(&id_found) {
-            Ok(v) => Ok(v),
-            Err(e) => Err(Box::new(e)),
-        }
-    }
-    Err(err_not_found)
 }
 
 fn get_from_uuid(conn: &Connection, id_str: &str) -> Result<Snip, Box<dyn Error>> {
@@ -224,47 +193,6 @@ fn index_item(_conn: &Connection, s: &Snip) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn read_lines_from_stdin() -> String {
-    let mut buf = String::new();
-    let mut data = String::new();
-
-    let mut bytes_read;
-    loop {
-        bytes_read = io::stdin().read_line(&mut buf);
-
-        match bytes_read {
-            Ok(v) => match v {
-                v if v > 0 => data = data + &buf.to_owned(),
-                _ => break,
-            },
-            Err(_) => break,
-        }
-    }
-    data
-}
-
-fn split_words(s: &str) -> Vec<&str> {
-    let input = s.trim_start().trim_end();
-
-    let pattern = Regex::new(r"(?m)\s+").unwrap();
-    pattern.split(input).collect()
-}
-
-#[allow(dead_code)]
-fn strip_punctuation(s: &str) -> &str {
-    let chars_strip = &['.', ',', '!', '?', '"', '\'', '[', ']', '(', ')'];
-
-    let mut clean = match s.strip_prefix(chars_strip) {
-        Some(v) => v,
-        None => s,
-    };
-    clean = match clean.strip_suffix(chars_strip) {
-        Some(v) => v,
-        None => clean,
-    };
-    clean
-}
-
 fn list_snips(conn: &Connection, full: bool) -> Result<(), Box<dyn Error>> {
     let mut stmt = match conn.prepare("SELECT uuid, name, timestamp, data from snip") {
         Ok(v) => v,
@@ -301,19 +229,91 @@ fn list_snips(conn: &Connection, full: bool) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn stem_something(s: &str) -> String {
-    let stemmer = Stemmer::create(Algorithm::English);
-    stemmer.stem(s.to_lowercase().as_str()).to_string()
-}
-
-fn read_data_from_stdin() -> Result<String, io::Error> {
+fn read_line_from_stdin() -> Result<String, io::Error> {
     let mut buffer = String::new();
     io::stdin().read_line(&mut buffer)?;
     Ok(buffer.trim_end().to_owned())
 }
 
+fn read_lines_from_stdin() -> String {
+    let mut buf = String::new();
+    let mut data = String::new();
+
+    let mut bytes_read;
+    loop {
+        bytes_read = io::stdin().read_line(&mut buf);
+
+        match bytes_read {
+            Ok(v) => match v {
+                v if v > 0 => data = data + &buf.to_owned(),
+                _ => break,
+            },
+            Err(_) => break,
+        }
+    }
+    data
+}
+
+fn search_uuid(conn: &Connection, id_partial: &str) -> Result<Uuid, Box<dyn Error>> {
+    let mut stmt = conn.prepare("SELECT uuid from snip WHERE uuid LIKE :id LIMIT 2")?;
+    let id_partial_fuzzy = format!("{}{}{}", "%", id_partial, "%");
+
+    let query_iter = stmt.query_map(&[(":id", &id_partial_fuzzy)], |row| {
+        let id_str = row.get(0)?;
+        Ok(id_str)
+    })?;
+
+    // return only if a singular result is matched
+    let mut id_found = "".to_string();
+    let mut first_run = true;
+    let err_not_found = Box::new(io::Error::new(ErrorKind::NotFound, "could not find unique uuid match"));
+    for id in query_iter {
+        if first_run {
+            first_run = false;
+            id_found = id.unwrap();
+        } else {
+            return Err(err_not_found);
+        }
+    }
+
+    if !id_found.is_empty() {
+        return match Uuid::parse_str(&id_found) {
+            Ok(v) => Ok(v),
+            Err(e) => Err(Box::new(e)),
+        }
+    }
+    Err(err_not_found)
+}
+
 fn split_uuid(uuid: Uuid) -> Vec<String> {
     uuid.to_string().split('-').map(|s| s.to_string()).collect()
+}
+
+fn split_words(s: &str) -> Vec<&str> {
+    let input = s.trim_start().trim_end();
+
+    let pattern = Regex::new(r"(?m)\s+").unwrap();
+    pattern.split(input).collect()
+}
+
+fn stem_something(s: &str) -> String {
+    let stemmer = Stemmer::create(Algorithm::English);
+    stemmer.stem(s.to_lowercase().as_str()).to_string()
+}
+
+#[allow(dead_code)]
+fn strip_punctuation(s: &str) -> &str {
+    let chars_strip = &['.', ',', '!', '?', '"', '\'', '[', ']', '(', ')'];
+
+    let mut clean = match s.strip_prefix(chars_strip) {
+        Some(v) => v,
+        None => s,
+    };
+    clean = match clean.strip_suffix(chars_strip) {
+        Some(v) => v,
+        None => clean,
+    };
+    clean
 }
 
 #[cfg(test)]
