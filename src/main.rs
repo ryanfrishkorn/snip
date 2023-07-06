@@ -5,7 +5,7 @@ use rusqlite::{Connection, Result};
 use rust_stemmers::{Algorithm, Stemmer};
 use std::error::Error;
 use std::{env, io};
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Read};
 use uuid::Uuid;
 
 struct Snip {
@@ -115,8 +115,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                 // newline on last term
                 if words.len() - 1 == i {
                     println!();
+                } else {
+                    print!(" ");
                 }
             }
+            eprintln!("words: {}", words.len());
         }
         Some(("split", sub_matches)) => {
             let input = match sub_matches.get_one::<String>("string") {
@@ -271,20 +274,11 @@ fn list_snips(conn: &Connection, full_uuid: bool, show_time: bool) -> Result<(),
 
 /// Read all data from standard input, line by line, and return it as a String.
 fn read_lines_from_stdin() -> String {
-    let mut buf = String::new();
     let mut data = String::new();
 
-    let mut bytes_read;
-    loop {
-        bytes_read = io::stdin().read_line(&mut buf);
-
-        match bytes_read {
-            Ok(v) => match v {
-                v if v > 0 => data = data + &buf.to_owned(),
-                _ => break,
-            },
-            Err(_) => break,
-        }
+    match io::stdin().read_to_string(&mut data) {
+        Ok(_) => (),
+        Err(e) => panic!("{}", e),
     }
     data
 }
