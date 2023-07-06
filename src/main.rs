@@ -112,6 +112,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Create the table used to index documents for full text search. This is only done when the table is not present.
 fn create_index_table(conn: &Connection) -> Result<()> {
     let mut stmt = conn.prepare("CREATE TABLE IF NOT EXISTS snip_index_rs(term TEXT, uuid TEXT, count INTEGER, positions TEXT)")?;
     stmt.raw_execute()?;
@@ -119,6 +120,7 @@ fn create_index_table(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Get the snip specified matching the given full-length uuid string.
 fn get_from_uuid(conn: &Connection, id_str: &str) -> Result<Snip, Box<dyn Error>> {
     let mut stmt = conn.prepare("SELECT uuid, timestamp, name, data FROM snip WHERE uuid = :id")?;
 
@@ -193,6 +195,7 @@ fn index_item(_conn: &Connection, s: &Snip) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Print a list of all documents in the database.
 fn list_snips(conn: &Connection, full: bool) -> Result<(), Box<dyn Error>> {
     let mut stmt = match conn.prepare("SELECT uuid, name, timestamp, data from snip") {
         Ok(v) => v,
@@ -229,12 +232,14 @@ fn list_snips(conn: &Connection, full: bool) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Read a single line from standard input and returns the string.
 fn read_line_from_stdin() -> Result<String, io::Error> {
     let mut buffer = String::new();
     io::stdin().read_line(&mut buffer)?;
     Ok(buffer.trim_end().to_owned())
 }
 
+/// Read all data from standard input, line by line, and return it as a String.
 fn read_lines_from_stdin() -> String {
     let mut buf = String::new();
     let mut data = String::new();
@@ -254,6 +259,8 @@ fn read_lines_from_stdin() -> String {
     data
 }
 
+/// Search for a uuid matching the supplied partial string.
+/// The partial uuid must match a unique record to return the result.
 fn search_uuid(conn: &Connection, id_partial: &str) -> Result<Uuid, Box<dyn Error>> {
     let mut stmt = conn.prepare("SELECT uuid from snip WHERE uuid LIKE :id LIMIT 2")?;
     let id_partial_fuzzy = format!("{}{}{}", "%", id_partial, "%");
@@ -289,6 +296,7 @@ fn split_uuid(uuid: Uuid) -> Vec<String> {
     uuid.to_string().split('-').map(|s| s.to_string()).collect()
 }
 
+/// Split a string and into a vector of words delimited by whitespace. No punctuation is not stripped.
 fn split_words(s: &str) -> Vec<&str> {
     let input = s.trim_start().trim_end();
 
