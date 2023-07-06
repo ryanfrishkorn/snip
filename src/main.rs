@@ -319,8 +319,10 @@ fn strip_punctuation(s: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     const DB_PATH: &str = "snip.enwiki.partial.sqlite3";
+    const ID_STR: &str = "ba652e2d-b248-4bcc-b36e-c26c0d0e8002";
 
     #[test]
     fn split_mutiline_string() -> Result<()> {
@@ -351,11 +353,10 @@ that was an [empty] line.
 
     #[test]
     fn test_get_from_uuid() -> Result<()> {
-        let id_str = "ba652e2d-b248-4bcc-b36e-c26c0d0e8002";
         let conn = Connection::open(DB_PATH)?;
 
-        if let Ok(s) = get_from_uuid(&conn, id_str) {
-            println!("{} {} {}", s.uuid, s.timestamp.to_string(), s.name);
+        if let Ok(s) = get_from_uuid(&conn, ID_STR) {
+            println!("{} {} {}", s.uuid, s.timestamp, s.name);
             return Ok(());
         }
         panic!("{}", "could not get snip from uuid");
@@ -363,18 +364,39 @@ that was an [empty] line.
 
     #[test]
     fn test_search_uuid() -> Result<()> {
-        let id_str_full = "ba652e2d-b248-4bcc-b36e-c26c0d0e8002";
-        let id_str_part = "ba652e2d-b";
-        let expect = match Uuid::parse_str(id_str_full) {
+        let partials: HashMap<String, String> = HashMap::from([    // ba652e2d-b248-4bcc-b36e-c26c0d0e8002
+            (ID_STR[0..8].to_string(), "segment 1".to_string()),   // ba652e2d
+            (ID_STR[9..13].to_string(), "segment 2".to_string()),  // _________b248
+            (ID_STR[14..18].to_string(), "segment 3".to_string()), // ______________4bbc
+            (ID_STR[19..23].to_string(), "segment 4".to_string()), // ___________________b36e
+            (ID_STR[24..].to_string(), "segment 5".to_string()),   // ________________________c26c0d0e8002
+            (ID_STR[7..12].to_string(), "partial 1".to_string()),  // _______d-b24
+            (ID_STR[7..14].to_string(), "partial 2".to_string()),  // _______d-b248-
+            (ID_STR[7..15].to_string(), "partial 3".to_string()),  // _______d-b248-4
+            (ID_STR[8..19].to_string(), "partial 4".to_string()),  // ________-b248-4bcc-
+            (ID_STR[23..].to_string(), "partial 5".to_string()),   // _______________________-c26c0d0e8002
+        ]);
+
+        /*
+        println!("ba652e2d-b248-4bcc-b36e-c26c0d0e8002");
+        for p in &partials {
+            println!("{} {}", p.0, p.1);
+        }
+        */
+
+        let expect = match Uuid::parse_str(ID_STR) {
             Ok(v) => v,
             Err(e) => panic!("{}", e),
         };
         let conn = Connection::open(DB_PATH)?;
 
-        let id = search_uuid(&conn, id_str_part);
-        match id {
-            Ok(v) => assert_eq!(expect, v),
-            Err(e) => panic!("{}", e),
+        // test all uuid string partials
+        for p in &partials {
+            let id = search_uuid(&conn, p.0);
+            match id {
+                Ok(v) => assert_eq!(expect, v),
+                Err(e) => panic!("{}, full: {}, partial: {}", e, ID_STR, &p.0),
+            }
         }
         Ok(())
     }
