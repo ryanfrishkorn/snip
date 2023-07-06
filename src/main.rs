@@ -1,5 +1,5 @@
 use chrono::{DateTime, FixedOffset};
-use clap::{arg, Command};
+use clap::{Arg, Command};
 use regex::Regex;
 use rusqlite::{Connection, Result};
 use rust_stemmers::{Algorithm, Stemmer};
@@ -20,24 +20,36 @@ fn main() -> Result<(), Box<dyn Error>> {
         .bin_name("snip-rs")
         .arg_required_else_help(true)
         .subcommand_required(true)
-        .subcommand(clap::command!("ls").about("List all snips"))
         .subcommand(
-            clap::command!("split")
+            Command::new("ls")
+                .about("List all snips")
+                .arg(Arg::new("l")
+                    .short('l')
+                    .num_args(0)
+                    .action(clap::ArgAction::SetTrue)
+                )
+                .arg(Arg::new("t")
+                    .short('t')
+                    .num_args(0)
+                    .action(clap::ArgAction::SetTrue)
+                )
+        )
+        .subcommand(
+            Command::new("split")
                 .about("Split a string into words")
-                .arg(arg!([string] "The string to split"))
-                .arg_required_else_help(false),
+                .arg(Arg::new("string"))
+                .arg_required_else_help(false)
         )
         .subcommand(
             Command::new("stem")
                 .about("Stem word from stdin")
-                .arg(arg!(<word> "The word to stem"))
-                .arg_required_else_help(true),
+                .arg(Arg::new("words"))
+                .arg_required_else_help(false),
         )
-        // .subcommand(clap::command!("get").about("Print first snip in database"))
         .subcommand(
             Command::new("get")
                 .about("Get from uuid")
-                .arg(arg!(<uuid> "The uuid of item"))
+                .arg(Arg::new("uuid"))
                 .arg_required_else_help(true),
         )
         .subcommand(Command::new("index").about("Reindex the database"));
@@ -77,14 +89,28 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("help");
         }
         Some(("ls", _)) => {
-            list_snips(&conn, true).expect("could not list snips");
+            // honor arguments if present
+            if let Some(arg_matches) = matches.subcommand_matches("ls") {
+                list_snips(&conn, arg_matches.get_flag("l"), arg_matches.get_flag("t")).expect("could not list snips");
+            } else {
+                // default no args
+                list_snips(&conn, false, false).expect("could not list snips");
+            }
         }
         Some(("stem", sub_matches)) => {
-            let term = match sub_matches.get_one::<String>("word") {
+            let input = match sub_matches.get_one::<String>("words") {
                 Some(v) => v.to_owned(),
-                None => read_line_from_stdin()?,
+                None => read_lines_from_stdin(),
             };
-            println!("{} -> {}", term, stem_something(&term));
+            let words = split_words(&input);
+            for (i, w) in words.iter().enumerate() {
+                print!("{} ", stem_something(w));
+
+                // newline on last term
+                if words.len() - 1 == i {
+                    println!();
+                }
+            }
         }
         Some(("split", sub_matches)) => {
             let input = match sub_matches.get_one::<String>("string") {
@@ -196,7 +222,7 @@ fn index_item(_conn: &Connection, s: &Snip) -> Result<(), Box<dyn Error>> {
 }
 
 /// Print a list of all documents in the database.
-fn list_snips(conn: &Connection, full: bool) -> Result<(), Box<dyn Error>> {
+fn list_snips(conn: &Connection, full_uuid: bool, show_time: bool) -> Result<(), Box<dyn Error>> {
     let mut stmt = match conn.prepare("SELECT uuid, name, timestamp, data from snip") {
         Ok(v) => v,
         Err(e) => panic!("{}", e),
@@ -222,10 +248,18 @@ fn list_snips(conn: &Connection, full: bool) -> Result<(), Box<dyn Error>> {
         let s = snip.unwrap();
         let id = Uuid::parse_str(&s.uuid)?;
 
-        match full {
-            true => println!("{} {} {}", s.uuid, s.timestamp, s.name),
-            false => println!("{} {} {}", split_uuid(id)[0], s.timestamp, s.name),
+        // uuid
+        match full_uuid {
+            true => print!("{} ", s.uuid),
+            false => print!("{} ", split_uuid(id)[0]),
         }
+        // timestamp
+        if show_time {
+            print!("{} ", s.timestamp);
+        }
+        // name
+        print!("{} ", s.name);
+        println!(); // just for the newline
         // println!("{} {} {}", split_uuid(id)[0], s.timestamp, s.name);
     }
 
