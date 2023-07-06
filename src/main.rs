@@ -21,6 +21,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         .arg_required_else_help(true)
         .subcommand_required(true)
         .subcommand(
+            Command::new("get")
+                .about("Get from uuid")
+                .arg(Arg::new("uuid"))
+                .arg_required_else_help(true),
+        )
+        .subcommand(
+            Command::new("index")
+                .about("Reindex the database")
+                .arg_required_else_help(false),
+        )
+        .subcommand(
             Command::new("ls")
                 .about("List all snips")
                 .arg(Arg::new("l")
@@ -45,14 +56,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .about("Stem word from stdin")
                 .arg(Arg::new("words"))
                 .arg_required_else_help(false),
-        )
-        .subcommand(
-            Command::new("get")
-                .about("Get from uuid")
-                .arg(Arg::new("uuid"))
-                .arg_required_else_help(true),
-        )
-        .subcommand(Command::new("index").about("Reindex the database"));
+        );
+
 
     let matches = cmd.get_matches();
 
@@ -103,8 +108,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 None => read_lines_from_stdin(),
             };
             let words = split_words(&input);
+            let stemmer = Stemmer::create(Algorithm::English);
             for (i, w) in words.iter().enumerate() {
-                print!("{} ", stem_something(w));
+                print!("{}", stemmer.stem(w.to_lowercase().as_str()));
 
                 // newline on last term
                 if words.len() - 1 == i {
@@ -214,10 +220,7 @@ fn index_all_items(conn: &Connection) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn index_item(_conn: &Connection, s: &Snip) -> Result<(), Box<dyn Error>> {
-    let _text_stemmed = stem_something(s.text.as_str());
-    // println!("{}", text_stemmed);
-
+fn index_item(_conn: &Connection, _s: &Snip) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
@@ -264,13 +267,6 @@ fn list_snips(conn: &Connection, full_uuid: bool, show_time: bool) -> Result<(),
     }
 
     Ok(())
-}
-
-/// Read a single line from standard input and returns the string.
-fn read_line_from_stdin() -> Result<String, io::Error> {
-    let mut buffer = String::new();
-    io::stdin().read_line(&mut buffer)?;
-    Ok(buffer.trim_end().to_owned())
 }
 
 /// Read all data from standard input, line by line, and return it as a String.
@@ -336,11 +332,6 @@ fn split_words(s: &str) -> Vec<&str> {
 
     let pattern = Regex::new(r"(?m)\s+").unwrap();
     pattern.split(input).collect()
-}
-
-fn stem_something(s: &str) -> String {
-    let stemmer = Stemmer::create(Algorithm::English);
-    stemmer.stem(s.to_lowercase().as_str()).to_string()
 }
 
 #[allow(dead_code)]
