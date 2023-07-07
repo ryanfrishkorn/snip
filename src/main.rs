@@ -1,11 +1,11 @@
 use chrono::{DateTime, FixedOffset};
 use clap::{Arg, ArgAction, Command};
-use regex::Regex;
 use rusqlite::{Connection, OpenFlags, Result};
 use rust_stemmers::{Algorithm, Stemmer};
 use std::error::Error;
 use std::{env, io};
 use std::io::{ErrorKind, Read};
+use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 
 struct Snip {
@@ -131,7 +131,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Some(v) => v.to_owned(),
                 None => read_lines_from_stdin(),
             };
-            let words = split_words(&input);
+            let words = input.unicode_words().collect::<Vec<&str>>();
             let stemmer = Stemmer::create(Algorithm::English);
             for (i, w) in words.iter().enumerate() {
                 print!("{}", stemmer.stem(w.to_lowercase().as_str()));
@@ -150,13 +150,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Some(v) => v.to_owned(),
                 None => read_lines_from_stdin(),
             };
-            println!(
-                "{:?}",
-                split_words(&input)
-                    .into_iter()
-                    .map(|x| x.to_lowercase())
-                    .collect::<Vec<String>>()
-            );
+            let words = input.unicode_words();
+            println!("{:?}", words.collect::<Vec<&str>>());
         }
         Some(("index", _sub_matches)) => {
             create_index_table(&conn)?;
@@ -368,14 +363,6 @@ fn split_uuid(uuid: Uuid) -> Vec<String> {
     uuid.to_string().split('-').map(|s| s.to_string()).collect()
 }
 
-/// Split a string and into a vector of words delimited by whitespace. No punctuation is not stripped.
-fn split_words(s: &str) -> Vec<&str> {
-    let input = s.trim_start().trim_end();
-
-    let pattern = Regex::new(r"(?m)\s+").unwrap();
-    pattern.split(input).collect()
-}
-
 #[allow(dead_code)]
 fn strip_punctuation(s: &str) -> &str {
     let chars_strip = &['.', ',', '!', '?', '"', '\'', '[', ']', '(', ')'];
@@ -409,19 +396,19 @@ that was an [empty] line.
         let expect: Vec<&str> = vec![
             "Lorem",
             "ipsum",
-            "(dolor)",
+            "dolor",
             "sit",
-            "amet,",
+            "amet",
             "consectetur",
             "second",
-            "line?",
+            "line",
             "that",
             "was",
             "an",
-            "[empty]",
-            "line.",
+            "empty",
+            "line",
         ];
-        let split = split_words(s);
+        let split: Vec<&str> = s.unicode_words().collect();
         assert_eq!(expect, split);
         Ok(())
     }
