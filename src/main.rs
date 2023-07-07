@@ -1,5 +1,5 @@
 use chrono::{DateTime, FixedOffset};
-use clap::{Arg, Command};
+use clap::{Arg, ArgAction, Command};
 use regex::Regex;
 use rusqlite::{Connection, Result};
 use rust_stemmers::{Algorithm, Stemmer};
@@ -37,13 +37,22 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .arg(Arg::new("l")
                     .short('l')
                     .num_args(0)
-                    .action(clap::ArgAction::SetTrue)
+                    .action(ArgAction::SetTrue)
                 )
                 .arg(Arg::new("t")
                     .short('t')
                     .num_args(0)
-                    .action(clap::ArgAction::SetTrue)
+                    .action(ArgAction::SetTrue)
                 )
+        )
+        .subcommand(
+            Command::new("search")
+                .about("Search for terms")
+                .arg(Arg::new("terms")
+                    .action(ArgAction::Append)
+                    .required(true)
+                )
+                .arg_required_else_help(true)
         )
         .subcommand(
             Command::new("split")
@@ -100,6 +109,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             } else {
                 // default no args
                 list_snips(&conn, false, false).expect("could not list snips");
+            }
+        }
+        Some(("search", sub_matches)) => {
+            if let Some(args) = sub_matches.get_many::<String>("terms") {
+                let terms = args.map(|x| x.as_str()).collect::<Vec<&str>>();
+                println!("terms: {:?}", terms);
             }
         }
         Some(("stem", sub_matches)) => {
