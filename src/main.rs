@@ -23,13 +23,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         .subcommand(
             Command::new("get")
                 .about("Get from uuid")
+                .arg_required_else_help(true)
                 .arg(Arg::new("uuid"))
-                .arg_required_else_help(true),
         )
         .subcommand(
             Command::new("index")
                 .about("Reindex the database")
-                .arg_required_else_help(false),
+                .arg_required_else_help(false)
         )
         .subcommand(
             Command::new("ls")
@@ -48,28 +48,26 @@ fn main() -> Result<(), Box<dyn Error>> {
         .subcommand(
             Command::new("search")
                 .about("Search for terms")
+                .arg_required_else_help(true)
                 .arg(Arg::new("terms")
                     .action(ArgAction::Append)
                     .required(true)
                 )
-                .arg_required_else_help(true)
         )
         .subcommand(
             Command::new("split")
                 .about("Split a string into words")
-                .arg(Arg::new("string"))
                 .arg_required_else_help(false)
+                .arg(Arg::new("string"))
         )
         .subcommand(
             Command::new("stem")
                 .about("Stem word from stdin")
+                .arg_required_else_help(false)
                 .arg(Arg::new("words"))
-                .arg_required_else_help(false),
         );
 
-
     let matches = cmd.get_matches();
-
     let db_file_default = ".snip.sqlite3".to_string();
     let home_dir = match env::var("HOME") {
         Ok(v) => v,
@@ -113,8 +111,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         Some(("search", sub_matches)) => {
             if let Some(args) = sub_matches.get_many::<String>("terms") {
-                let terms = args.map(|x| x.as_str()).collect::<Vec<&str>>();
+                let terms: Vec<String> = args.map(|x| x.to_string()).collect();
                 println!("terms: {:?}", terms);
+                for term in terms {
+                    let _ = search_data(&conn, &term);
+                }
             }
         }
         Some(("stem", sub_matches)) => {
@@ -296,6 +297,30 @@ fn read_lines_from_stdin() -> String {
         Err(e) => panic!("{}", e),
     }
     data
+}
+
+fn search_data(conn: &Connection, term: &String) -> Result<Vec<Uuid>, Box<dyn Error>> {
+    let mut stmt = conn.prepare("SELECT uuid FROM snip WHERE data LIKE :term")?;
+    let term_fuzzy = format!("{}{}{}", "%", term, "%");
+
+    let query_iter = stmt.query_map(&[(":term", &term_fuzzy)], |row| {
+        let id_str: String = row.get(0)?;
+        Ok(id_str)
+    })?;
+
+    let mut results: Vec<Uuid> = Vec::new();
+    for i in query_iter {
+        let id_str = match i {
+            Ok(v) => v,
+            Err(e) => return Err(Box::new(e)),
+        };
+        match Uuid::parse_str(&id_str) {
+            Ok(v) => results.push(v),
+            Err(e) => return Err(Box::new(e)),
+        }
+    }
+    println!("results: {:?}", results);
+    Ok(results)
 }
 
 /// Search for a uuid matching the supplied partial string.
