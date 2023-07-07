@@ -1,7 +1,7 @@
 use chrono::{DateTime, FixedOffset};
 use clap::{Arg, ArgAction, Command};
 use regex::Regex;
-use rusqlite::{Connection, Result};
+use rusqlite::{Connection, OpenFlags, Result};
 use rust_stemmers::{Algorithm, Stemmer};
 use std::error::Error;
 use std::{env, io};
@@ -19,6 +19,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cmd = Command::new("snip-rs")
         .bin_name("snip-rs")
         .arg_required_else_help(true)
+        .arg(Arg::new("read-only")
+            .long("read-only")
+            .action(ArgAction::SetTrue)
+        )
         .subcommand_required(true)
         .subcommand(
             Command::new("get")
@@ -74,7 +78,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         Err(e) => panic!("{}", e),
     };
     let db_path = env::var("SNIP_DB").unwrap_or(format!("{}/{}", home_dir, db_file_default));
-    let conn = Connection::open(db_path)?;
+
+    let conn = match matches.get_flag("read-only") {
+        true => Connection::open_with_flags(db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?,
+        false => Connection::open(db_path)?,
+    };
 
     // process all subcommands as in: https://docs.rs/clap/latest/clap/_derive/_cookbook/git/index.html
     match matches.subcommand() {
