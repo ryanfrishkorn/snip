@@ -166,6 +166,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Create the main tables used to store documents, attachments, and document matrix.
+fn create_snip_tables(conn: &Connection) -> Result<(), Box<dyn Error>> {
+    let mut stmt = conn.prepare("CREATE TABLE IF NOT EXISTS snip(uuid TEXT, timestamp TEXT, name TEXT, data TEXT)")?;
+    stmt.raw_execute()?;
+
+    let mut stmt = conn.prepare("CREATE TABLE IF NOT EXISTS snip_attachment(uuid TEXT, snip_uuid TEXT, timestamp TEXT, name TEXT, data BLOB, size INTEGER)")?;
+    stmt.raw_execute()?;
+
+    let mut stmt = conn.prepare("CREATE TABLE IF NOT EXISTS snip_index(term TEXT, uuid TEXT, count INTEGER, positions TEXT)")?;
+    stmt.raw_execute()?;
+
+    Ok(())
+}
+
 /// Create the table used to index documents for full text search. This is only done when the table is not present.
 fn create_index_table(conn: &Connection) -> Result<()> {
     let mut stmt = conn.prepare("CREATE TABLE IF NOT EXISTS snip_index_rs(term TEXT, uuid TEXT, count INTEGER, positions TEXT)")?;
@@ -382,6 +396,7 @@ fn strip_punctuation(s: &str) -> &str {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use rusqlite::DatabaseName;
 
     const DB_PATH: &str = "snip.enwiki.partial.sqlite3";
     const ID_STR: &str = "ba652e2d-b248-4bcc-b36e-c26c0d0e8002";
@@ -413,9 +428,76 @@ that was an [empty] line.
         Ok(())
     }
 
+    // This prepares an in-memory database for testing. This avoids database file name collisions
+    // and allows each unit test to use congruent data yet be completely isolated. This function
+    // panics to keep test function calls brief, and they cannot proceed unless it succeeds.
+    fn prepare_database() -> Result<Connection> {
+        let conn = match Connection::open_in_memory() {
+            Ok(v) => v,
+            Err(e) => panic!("{}", e),
+        };
+        // import data
+        create_snip_tables(&conn).expect("creating database tables");
+        import_snip_data(&conn).expect("importing test data");
+
+        Ok(conn)
+    }
+
+    fn import_snip_data(conn: &Connection) -> Result<(), Box<dyn Error>> {
+        let snip_file = "test_data/snip.csv";
+        let snip_attachment_file = "test_data/snip_attachment.csv";
+
+        let mut data = csv::Reader::from_path(snip_file)?;
+        for r in data.records() {
+            let record = r?;
+
+            // gather record data
+            let id = record.get(0).expect("getting uuid field");
+            let timestamp = record.get(1).expect("getting uuid field");
+            let name = record.get(2).expect("getting uuid field");
+            let data = record.get(3).expect("getting uuid field");
+
+            // insert the record
+            let mut stmt = conn.prepare("INSERT INTO snip(uuid, timestamp, name, data) VALUES (:id, :timestamp, :name, :data)")?;
+            stmt.execute(&[(":id", id), (":timestamp", timestamp), (":name", name), (":data", data)])?;
+        }
+
+        data = csv::Reader::from_path(snip_attachment_file)?;
+        for r in data.records() {
+            let record = r?;
+
+            let id = record.get(0).expect("getting attachment uuid field");
+            let snip_id = record.get(1).expect("getting attachment uuid field");
+            let timestamp = record.get(2).expect("getting timestamp field");
+            let name = record.get(3).expect("getting name field");
+            let size = record.get(4).expect("getting size field");
+
+            // use name to read data from test file
+            let data = std::fs::read(format!("{}/{}", "test_data/attachments/", name))?;
+            let data = data.as_slice();
+
+            let mut stmt = conn.prepare("INSERT INTO snip_attachment(uuid, snip_uuid, timestamp, name, data, size) VALUES (:id, :snip_id, :timestamp, :name, ZEROBLOB(:blob_size), :size)")?;
+            stmt.execute(&[
+                (":id", id),
+                (":snip_id", snip_id),
+                (":timestamp", timestamp),
+                (":name", name),
+                (":blob_size", data.len().to_string().as_str()),
+                (":size", size),
+            ])?;
+            let row_id = conn.last_insert_rowid();
+
+            // add binary data to blob
+            let mut blob = conn.blob_open(DatabaseName::Main, "snip_attachment", "data", row_id, false)?;
+            blob.write_at(data, 0)?;
+        }
+
+        Ok(())
+    }
+
     #[test]
     fn test_get_from_uuid() -> Result<()> {
-        let conn = Connection::open(DB_PATH)?;
+        let conn = prepare_database().expect("preparing in-memory database");
 
         if let Ok(s) = get_from_uuid(&conn, ID_STR) {
             println!("{} {} {}", s.uuid, s.timestamp, s.name);
