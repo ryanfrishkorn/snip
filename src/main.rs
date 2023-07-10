@@ -100,10 +100,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Ok(v) => v,
                 Err(e) => panic!("{}", e),
             };
+            // print header
             println!(
-                "uuid: {}\nname: {}\ntimestamp: {}\n----\n{}\n----",
-                s.uuid, s.name, s.timestamp, s.text
+                "uuid: {}\nname: {}\ntimestamp: {}\n----",
+                s.uuid, s.name, s.timestamp
             );
+            // add a newline if not already present
+            match s.text.chars().last() {
+                Some(v) if v == '\n' => println!("{}----", s.text),
+                _ => println!("{}\n----", s.text),
+            }
         }
         Some(("help", _)) => {
             println!("help");
