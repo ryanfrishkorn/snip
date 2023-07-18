@@ -83,96 +83,104 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     // process all subcommands as in: https://docs.rs/clap/latest/clap/_derive/_cookbook/git/index.html
-    match matches.subcommand() {
-        Some(("get", sub_matches)) => {
-            let id_str = match sub_matches.get_one::<String>("uuid") {
-                Some(v) => v,
-                None => panic!("{}", "need uuid"),
-            };
-            // search for unique uuid to allow partial string arg
-            let id_str_full = match snip::search_uuid(&conn, id_str) {
-                Ok(v) => v,
-                Err(e) => panic!("{}", e),
-            };
-            let mut s = match snip::get_from_uuid(&conn, &id_str_full.to_string()) {
-                Ok(v) => v,
-                Err(e) => panic!("{}", e),
-            };
-            // print header
-            println!(
-                "uuid: {}\nname: {}\ntimestamp: {}\n----",
-                s.uuid, s.name, s.timestamp
-            );
-            // add a newline if not already present
-            match s.text.chars().last() {
-                Some(v) if v == '\n' => println!("{}----", s.text),
-                _ => println!("{}\n----", s.text),
-            }
 
-            if let Some(analyze) = sub_matches.get_one::<bool>("analyze") {
-                if *analyze {
-                    // analyze
-                    s.analyze();
-                    println!("{:#?}\n", s.analysis);
-                }
+    // GET
+    if let Some(("get", sub_matches)) = matches.subcommand() {
+        let id_str = match sub_matches.get_one::<String>("uuid") {
+            Some(v) => v,
+            None => panic!("{}", "need uuid"),
+        };
+        // search for unique uuid to allow partial string arg
+        let id_str_full = match snip::search_uuid(&conn, id_str) {
+            Ok(v) => v,
+            Err(e) => panic!("{}", e),
+        };
+        let mut s = match snip::get_from_uuid(&conn, &id_str_full.to_string()) {
+            Ok(v) => v,
+            Err(e) => panic!("{}", e),
+        };
+        // print header
+        println!(
+            "uuid: {}\nname: {}\ntimestamp: {}\n----",
+            s.uuid, s.name, s.timestamp
+        );
+        // add a newline if not already present
+        match s.text.chars().last() {
+            Some(v) if v == '\n' => println!("{}----", s.text),
+            _ => println!("{}\n----", s.text),
+        }
+
+        if let Some(analyze) = sub_matches.get_one::<bool>("analyze") {
+            if *analyze {
+                // analyze
+                s.analyze();
+                println!("{:#?}\n", s.analysis);
             }
         }
-        Some(("help", _)) => {
+    }
+
+    // HELP
+    if let Some(("help", _)) = matches.subcommand() {
             println!("help");
-        }
-        Some(("ls", _)) => {
-            // honor arguments if present
-            if let Some(arg_matches) = matches.subcommand_matches("ls") {
-                snip::list_snips(&conn, arg_matches.get_flag("l"), arg_matches.get_flag("t")).expect("could not list snips");
-            } else {
-                // default no args
-                snip::list_snips(&conn, false, false).expect("could not list snips");
-            }
-        }
-        Some(("search", sub_matches)) => {
-            if let Some(args) = sub_matches.get_many::<String>("terms") {
-                let terms: Vec<String> = args.map(|x| x.to_string()).collect();
-                println!("terms: {:?}", terms);
-                for term in terms {
-                    let _ = snip::search_data(&conn, &term);
-                }
-            }
-        }
-        Some(("stem", sub_matches)) => {
-            let input = match sub_matches.get_one::<String>("words") {
-                Some(v) => v.to_owned(),
-                None => snip::read_lines_from_stdin(),
-            };
-            let words = input.unicode_words().collect::<Vec<&str>>();
-            let stemmer = Stemmer::create(Algorithm::English);
-            for (i, w) in words.iter().enumerate() {
-                print!("{}", stemmer.stem(w.to_lowercase().as_str()));
+    }
 
-                // newline on last term
-                if words.len() - 1 == i {
-                    println!();
-                } else {
-                    print!(" ");
-                }
+    // LS
+    if let Some(("ls", _)) = matches.subcommand() {
+        // honor arguments if present
+        if let Some(arg_matches) = matches.subcommand_matches("ls") {
+            snip::list_snips(&conn, arg_matches.get_flag("l"), arg_matches.get_flag("t")).expect("could not list snips");
+        } else {
+            // default no args
+            snip::list_snips(&conn, false, false).expect("could not list snips");
+        }
+    }
+
+    // SEARCH
+    if let Some(("search", sub_matches)) = matches.subcommand() {
+        if let Some(args) = sub_matches.get_many::<String>("terms") {
+            let terms: Vec<String> = args.map(|x| x.to_string()).collect();
+            println!("terms: {:?}", terms);
+            for term in terms {
+                let _ = snip::search_data(&conn, &term);
             }
-            eprintln!("words: {}", words.len());
         }
-        Some(("split", sub_matches)) => {
-            let input = match sub_matches.get_one::<String>("string") {
-                Some(v) => v.to_owned(),
-                None => snip::read_lines_from_stdin(),
-            };
-            let words = input.unicode_words();
-            println!("{:?}", words.collect::<Vec<&str>>());
+    }
+
+    // STEM
+    if let Some(("stem", sub_matches)) = matches.subcommand() {
+        let input = match sub_matches.get_one::<String>("words") {
+            Some(v) => v.to_owned(),
+            None => snip::read_lines_from_stdin(),
+        };
+        let words = input.unicode_words().collect::<Vec<&str>>();
+        let stemmer = Stemmer::create(Algorithm::English);
+        for (i, w) in words.iter().enumerate() {
+            print!("{}", stemmer.stem(w.to_lowercase().as_str()));
+
+            // newline on last term
+            if words.len() - 1 == i {
+                println!();
+            } else {
+                print!(" ");
+            }
         }
-        Some(("index", _sub_matches)) => {
-            snip::create_index_table(&conn)?;
-            snip::index_all_items(&conn)?;
-        }
-        _ => {
-            eprintln!("subcommand processing error");
-            std::process::exit(1);
-        }
+        eprintln!("words: {}", words.len());
+    }
+
+    // SPLIT
+    if let Some(("split", sub_matches)) = matches.subcommand() {
+        let input = match sub_matches.get_one::<String>("string") {
+            Some(v) => v.to_owned(),
+            None => snip::read_lines_from_stdin(),
+        };
+        let words = input.unicode_words();
+        println!("{:?}", words.collect::<Vec<&str>>());
+    }
+
+    // INDEX
+    if let Some(("index", _)) = matches.subcommand() {
+        snip::create_index_table(&conn)?;
+        snip::index_all_items(&conn)?;
     }
 
     Ok(())
