@@ -21,6 +21,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .about("Get from uuid")
                 .arg_required_else_help(true)
                 .arg(Arg::new("uuid"))
+                .arg(Arg::new("analyze")
+                    .long("analyze")
+                    .short('a')
+                    .num_args(0)
+                    .action(ArgAction::SetTrue)
+                )
         )
         .subcommand(
             Command::new("index")
@@ -88,7 +94,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Ok(v) => v,
                 Err(e) => panic!("{}", e),
             };
-            let s = match snip::get_from_uuid(&conn, &id_str_full.to_string()) {
+            let mut s = match snip::get_from_uuid(&conn, &id_str_full.to_string()) {
                 Ok(v) => v,
                 Err(e) => panic!("{}", e),
             };
@@ -101,6 +107,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             match s.text.chars().last() {
                 Some(v) if v == '\n' => println!("{}----", s.text),
                 _ => println!("{}\n----", s.text),
+            }
+
+            if let Some(analyze) = sub_matches.get_one::<bool>("analyze") {
+                if *analyze {
+                    // analyze
+                    s.analyze();
+                    println!("{:#?}\n", s.analysis);
+                }
             }
         }
         Some(("help", _)) => {

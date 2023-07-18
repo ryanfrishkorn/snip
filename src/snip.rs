@@ -1,8 +1,10 @@
 use chrono::{DateTime, FixedOffset};
 use rusqlite::{Connection};
+use rust_stemmers::Stemmer;
 use std::error::Error;
 use std::{io};
 use std::io::{ErrorKind, Read};
+use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 
 /// Snip is the main struct representing a document.
@@ -11,6 +13,144 @@ pub struct Snip {
     pub name: String,
     pub text: String,
     pub timestamp: DateTime<FixedOffset>,
+    pub analysis: SnipAnalysis,
+}
+
+#[derive(Debug)]
+pub struct SnipAnalysis {
+    words: Vec<SnipWord>,
+}
+
+#[derive(Debug)]
+pub struct SnipWord {
+    word: String,
+    stem: String,
+    prefix: Option<String>,
+    suffix: Option<String>,
+}
+
+impl Snip {
+    pub fn analyze(&mut self) {
+        self.split_words();
+        self.stem_words();
+        self.scan_fragments();
+    }
+
+    // scans and assigns all prefix and suffix strings to all analyzed words
+    pub fn scan_fragments(&mut self) {
+        // scan the document for tokens, in order collecting surrounding data for each token
+        let mut fragments: Vec<(usize, usize)> = Vec::new();
+        let mut prefixes: Vec<Option<String>> = Vec::new();
+        let mut suffix: Option<String> = None; // the suffix of the last word
+        let mut offset: usize = 0; // last position of cursor
+        let text_graphs = self.text.graphemes(true).collect::<Vec<_>>();
+
+        for (i, word) in self.analysis.words.iter().enumerate() {
+            // scan characters until word is encountered
+            // println!("finding word: {} len: {} offset: {}", word.word, word.word.len(), offset);
+            // start search from offset
+            let mut cur = 0;
+
+            // find index of word
+            let text_slice: Vec<&str> = match text_graphs.get(offset..) {
+                Some(v) => v.to_vec(),
+                None => break, // no more data left
+            };
+
+            let offset_match = match find_by_graph(&word.word, text_slice){
+                Some(v) => v,
+                None => break, // we must be at the end here
+            };
+            // println!("match cursor offset: {}", offset_match);
+            let fragment_pre_len = offset_match - cur;
+            // println!("fragment_pre_len: {}", fragment_pre_len);
+
+            let mut prefix: Option<String> = None;
+            // len > 0 means that a prefix exists
+            if fragment_pre_len > 0 {
+                // read the prefix length characters
+                let mut prefix_buf: Vec<String> = Vec::new();
+                for (i, c) in text_graphs[offset..].iter().enumerate() {
+                    if i < cur {
+                        // println!("skip");
+                        continue
+                    }
+                    if i < fragment_pre_len {
+                        // println!("cursor: {} push: {}", cur, *c);
+                        prefix_buf.push(c.to_string());
+                        cur += 1;
+                    } else {
+                        break
+                    }
+                }
+                // println!("prefix_buf: \"{}\"", prefix_buf);
+                prefix = Some(prefix_buf.concat());
+            }
+            prefixes.push(prefix);
+
+            // build fragment
+            let frag = (offset, offset + cur);
+            fragments.push(frag);
+
+            // println!("iteration: {} offset: {} word_len: {} cursor: {} word: {}", i, offset, word.word.graphemes(true).count(), cur, word.word);
+            offset = offset + cur + word.word.graphemes(true).count(); // set offset to current cursor value
+
+            // LAST ITERATION
+            if i == self.analysis.words.len() - 1 {
+
+                // offset less than length indicates a suffix remains
+                if offset < text_graphs.len() {
+                    let mut suffix_buf: Vec<String> = Vec::new();
+                    for c in text_graphs[offset..].iter() {
+                        suffix_buf.push(c.to_string());
+                    }
+                    suffix = match suffix_buf.is_empty() {
+                        true => None,
+                        false => Some(suffix_buf.iter().map(|x| x.to_owned()).collect::<String>()),
+                    };
+                    // println!("final suffix: {:?}", suffix);
+                }
+            }
+        }
+
+        // assign prefixes
+        for (i, prefix) in prefixes.iter().enumerate() {
+            self.analysis.words[i].prefix = prefix.to_owned();
+            if i > 0 {
+                // set previous suffix to the current prefix
+                self.analysis.words[i - 1].suffix = prefix.to_owned();
+            }
+        }
+
+        // assign last suffix
+        self.analysis.words[prefixes.len() - 1].suffix = suffix;
+    }
+
+    pub fn split_words(&mut self) {
+        let words = self.text.unicode_words().map(|x| x.to_string()).collect::<Vec<String>>();
+
+        for word in words {
+            // create DocWord
+            let word_analyzed = SnipWord {
+                word,
+                stem: String::new(),
+                prefix: None, // these are scanned later
+                suffix: None, // these are scanned later
+            };
+            self.analysis.words.push(word_analyzed);
+        }
+    }
+
+    fn stem_words(&mut self) {
+        let stemmer =  Stemmer::create(rust_stemmers::Algorithm::English);
+
+        for word_analyzed in self.analysis.words.iter_mut() {
+            let word_tmp = word_analyzed.word.to_lowercase().clone();
+            let stem = stemmer.stem(word_tmp.as_str());
+            word_analyzed.stem = stem.to_string();
+        }
+    }
+
 }
 
 /// Create the main tables used to store documents, attachments, and document matrix.
@@ -35,16 +175,38 @@ pub fn create_index_table(conn: &Connection) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+// returns the character index of a fully matched word
+pub fn find_by_graph(word: &str, text: Vec<&str>) -> Option<usize> {
+    let word_graphs: Vec<&str> = word.graphemes(true).collect();
+    let mut match_buf: Vec<&str> = Vec::new();
+
+    let mut cur = 0;
+    for (i, c) in text.iter().enumerate() {
+        if *c == word_graphs[cur] {
+            match_buf.push(c);
+            let word_compare: String = match_buf.concat();
+
+            // check whole word
+            if word_compare == word {
+                return Some(i - cur);
+            }
+            cur += 1;
+        } else {
+            match_buf.clear();
+            cur = 0;
+        }
+    }
+    None
+}
+
 /// Get the snip specified matching the given full-length uuid string.
 pub fn get_from_uuid(conn: &Connection, id_str: &str) -> Result<Snip, Box<dyn Error>> {
     let mut stmt = conn.prepare("SELECT uuid, timestamp, name, data FROM snip WHERE uuid = :id")?;
 
     let query_iter = stmt.query_map(&[(":id", &id_str)], |row| {
         let ts: String = row.get(1)?;
-        // let ts_parsed = DateTime::parse_from_rfc3339(ts.as_str())?;
-        let ts_parsed;
-        match DateTime::parse_from_rfc3339(ts.as_str()) {
-            Ok(v) => ts_parsed = v,
+        let ts_parsed = match DateTime::parse_from_rfc3339(ts.as_str()) {
+            Ok(v) => v,
             Err(e) => {
                 panic!("{}", e)
             }
@@ -55,6 +217,9 @@ pub fn get_from_uuid(conn: &Connection, id_str: &str) -> Result<Snip, Box<dyn Er
             name: row.get(2)?,
             timestamp: ts_parsed,
             text: row.get(3)?,
+            analysis: SnipAnalysis {
+                words: vec![],
+            }
         })
     })?;
 
@@ -89,6 +254,9 @@ pub fn index_all_items(conn: &Connection) -> Result<(), Box<dyn Error>> {
             name: row.get(2)?,
             timestamp: ts_parsed,
             text: row.get(3)?,
+            analysis: SnipAnalysis {
+                words: vec![],
+            }
         })
     })?;
 
@@ -127,6 +295,9 @@ pub fn list_snips(conn: &Connection, full_uuid: bool, show_time: bool) -> Result
             name: row.get(1)?,
             timestamp: ts_parsed,
             text: row.get(3)?,
+            analysis: SnipAnalysis {
+                words: vec![],
+            }
         })
     })?;
 
@@ -151,6 +322,7 @@ pub fn list_snips(conn: &Connection, full_uuid: bool, show_time: bool) -> Result
 
     Ok(())
 }
+
 
 /// Read all data from standard input, line by line, and return it as a String.
 pub fn read_lines_from_stdin() -> String {
