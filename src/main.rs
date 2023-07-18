@@ -154,17 +154,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         };
         let words = input.unicode_words().collect::<Vec<&str>>();
         let stemmer = Stemmer::create(Algorithm::English);
-        for (i, w) in words.iter().enumerate() {
-            print!("{}", stemmer.stem(w.to_lowercase().as_str()));
-
-            // newline on last term
-            if words.len() - 1 == i {
-                println!();
-            } else {
-                print!(" ");
-            }
+        let mut stems: Vec<String> = Vec::new();
+        for w in words.iter() {
+            stems.push(stemmer.stem(w.to_lowercase().as_str()).to_string());
         }
-        eprintln!("words: {}", words.len());
+        println!("{:?}", stems);
     }
 
     // SPLIT
