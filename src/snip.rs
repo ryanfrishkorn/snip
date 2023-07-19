@@ -359,6 +359,17 @@ pub fn read_lines_from_stdin() -> String {
     data
 }
 
+/// Remove a document matching given uuid
+pub fn remove_snip(conn: &Connection, id: Uuid) -> Result<(), Box<dyn Error>> {
+    let mut stmt = conn.prepare("DELETE FROM snip WHERE uuid = ?1")?;
+    let n = stmt.execute([id.to_string()]);
+    match n {
+        Ok(n) if n == 1 => Ok(()),
+        _ => Err(Box::new(io::Error::new(ErrorKind::Other, "delete did not return a singular result"))),
+    }
+}
+
+/// Returns ids of documents that match the given term
 pub fn search_data(conn: &Connection, term: &String) -> Result<Vec<Uuid>, Box<dyn Error>> {
     let mut stmt = conn.prepare("SELECT uuid FROM snip WHERE data LIKE :term")?;
     let term_fuzzy = format!("{} {} {}", "%", term, "%");
@@ -550,6 +561,19 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn test_remove_snip() -> Result<(), Box<dyn Error>> {
+        let conn = prepare_database().expect("preparing in-memory database");
+        let id = Uuid::try_parse("ba652e2d-b248-4bcc-b36e-c26c0d0e8002")?;
+        remove_snip(&conn, id)?;
+
+        // verify it was deleted
+        match get_from_uuid(&conn, id.to_string().as_str()) {
+            Ok(_) => Err(Box::new(io::Error::new(ErrorKind::Other, "id is still present in database after attempted delete"))),
+            Err(_) => Ok(()),
+        }
     }
 
     #[test]

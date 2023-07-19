@@ -66,6 +66,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                 )
         )
         .subcommand(
+            Command::new("rm")
+                .about("Remove items")
+                .arg_required_else_help(true)
+                .arg(Arg::new("ids")
+                    .action(ArgAction::Append)
+                    .required(true)
+                )
+        )
+        .subcommand(
             Command::new("search")
                 .about("Search for terms")
                 .arg_required_else_help(true)
@@ -180,6 +189,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         } else {
             // default no args
             snip::list_snips(&conn, false, false).expect("could not list snips");
+        }
+    }
+
+    // RM
+    if let Some(("rm", sub_matches)) = matches.subcommand() {
+        if let Some(args) = sub_matches.get_many::<String>("ids") {
+            // convert to uuid
+            let ids_str: Vec<String> = args.map(|x| x.to_string()).collect();
+            for (i, id_str) in ids_str.iter().enumerate() {
+                // obtain full id
+                let id = snip::search_uuid(&conn, id_str)?;
+                snip::remove_snip(&conn, id)?;
+                println!("{}/{} removed {}", i + 1, ids_str.len(), id);
+            }
         }
     }
 
