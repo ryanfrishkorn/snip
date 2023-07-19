@@ -45,6 +45,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                     .num_args(0)
                     .action(ArgAction::SetTrue)
                 )
+                .arg(Arg::new("raw")
+                    .long("raw")
+                    .short('r')
+                    .num_args(0)
+                    .action(ArgAction::SetTrue)
+                )
         )
         .subcommand(
             Command::new("index")
@@ -156,15 +162,26 @@ fn main() -> Result<(), Box<dyn Error>> {
             Ok(v) => v,
             Err(e) => panic!("{}", e),
         };
-        // print header
-        println!(
-            "uuid: {}\nname: {}\ntimestamp: {}\n----",
-            s.uuid, s.name, s.timestamp
-        );
-        // add a newline if not already present
-        match s.text.chars().last() {
-            Some(v) if v == '\n' => println!("{}----", s.text),
-            _ => println!("{}\n----", s.text),
+
+        // check for raw or formatted output
+        if let Some(raw) = sub_matches.get_one::<bool>("raw") {
+            match raw {
+                // raw output
+                true => print!("{}", s.text),
+                // formatted output
+                false => {
+                    println!(
+                        "uuid: {}\nname: {}\ntimestamp: {}\n----",
+                        s.uuid, s.name, s.timestamp
+                    );
+
+                    // add a newline if not already present
+                    match s.text.chars().last() {
+                        Some(v) if v == '\n' => println!("{}----", s.text),
+                        _ => println!("{}\n----", s.text),
+                    }
+                }
+            }
         }
 
         if let Some(analyze) = sub_matches.get_one::<bool>("analyze") {
