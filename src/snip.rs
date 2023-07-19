@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 /// Snip is the main struct representing a document.
 pub struct Snip {
-    pub uuid: String,
+    pub uuid: Uuid,
     pub name: String,
     pub text: String,
     pub timestamp: DateTime<FixedOffset>,
@@ -18,15 +18,15 @@ pub struct Snip {
 
 #[derive(Debug)]
 pub struct SnipAnalysis {
-    words: Vec<SnipWord>,
+    pub words: Vec<SnipWord>,
 }
 
 #[derive(Debug)]
 pub struct SnipWord {
-    word: String,
-    stem: String,
-    prefix: Option<String>,
-    suffix: Option<String>,
+    pub word: String,
+    pub stem: String,
+    pub prefix: Option<String>,
+    pub suffix: Option<String>,
 }
 
 impl Snip {
@@ -153,6 +153,13 @@ impl Snip {
 
 }
 
+pub fn insert_snip(conn: &Connection, s: &Snip) -> Result<(), Box<dyn Error>> {
+    let mut stmt = conn.prepare("INSERT INTO snip(uuid, timestamp, name, data) VALUES (?1, ?2, ?3, ?4)")?;
+    stmt.execute([s.uuid.to_string(), s.timestamp.to_rfc3339(), s.name.clone(), s.text.clone()])?;
+
+    Ok(())
+}
+
 /// Create the main tables used to store documents, attachments, and document matrix.
 pub fn create_snip_tables(conn: &Connection) -> Result<(), Box<dyn Error>> {
     let mut stmt = conn.prepare("CREATE TABLE IF NOT EXISTS snip(uuid TEXT, timestamp TEXT, name TEXT, data TEXT)")?;
@@ -212,8 +219,14 @@ pub fn get_from_uuid(conn: &Connection, id_str: &str) -> Result<Snip, Box<dyn Er
             }
         };
 
+        let id_str: String = row.get(0)?;
+        let id = match Uuid::try_parse(id_str.as_str()) {
+            Ok(v) => v,
+            Err(e) => panic!("parsing uuid: {}", e),
+        };
+
         Ok(Snip {
-            uuid: row.get(0)?,
+            uuid: id,
             name: row.get(2)?,
             timestamp: ts_parsed,
             text: row.get(3)?,
@@ -249,8 +262,14 @@ pub fn index_all_items(conn: &Connection) -> Result<(), Box<dyn Error>> {
             }
         };
 
+        let id_str: String = row.get(0)?;
+        let id = match Uuid::try_parse(id_str.as_str()) {
+            Ok(v) => v,
+            Err(e) => panic!("parsing uuid: {}", e),
+        };
+
         Ok(Snip {
-            uuid: row.get(0)?,
+            uuid: id,
             name: row.get(2)?,
             timestamp: ts_parsed,
             text: row.get(3)?,
@@ -290,8 +309,14 @@ pub fn list_snips(conn: &Connection, full_uuid: bool, show_time: bool) -> Result
             Err(e) => panic!("{}", e),
         };
 
+        let id_str: String = row.get(0)?;
+        let id = match Uuid::try_parse(id_str.as_str()) {
+            Ok(v) => v,
+            Err(e) => panic!("parsing uuid: {}", e),
+        };
+
         Ok(Snip {
-            uuid: row.get(0)?,
+            uuid: id,
             name: row.get(1)?,
             timestamp: ts_parsed,
             text: row.get(3)?,
@@ -303,12 +328,11 @@ pub fn list_snips(conn: &Connection, full_uuid: bool, show_time: bool) -> Result
 
     for snip in query_iter {
         let s = snip.unwrap();
-        let id = Uuid::parse_str(&s.uuid)?;
 
         // uuid
         match full_uuid {
             true => print!("{} ", s.uuid),
-            false => print!("{} ", split_uuid(id)[0]),
+            false => print!("{} ", split_uuid(s.uuid)[0]),
         }
         // timestamp
         if show_time {
@@ -337,7 +361,7 @@ pub fn read_lines_from_stdin() -> String {
 
 pub fn search_data(conn: &Connection, term: &String) -> Result<Vec<Uuid>, Box<dyn Error>> {
     let mut stmt = conn.prepare("SELECT uuid FROM snip WHERE data LIKE :term")?;
-    let term_fuzzy = format!("{}{}{}", "%", term, "%");
+    let term_fuzzy = format!("{} {} {}", "%", term, "%");
 
     let query_iter = stmt.query_map(&[(":term", &term_fuzzy)], |row| {
         let id_str: String = row.get(0)?;
@@ -355,7 +379,7 @@ pub fn search_data(conn: &Connection, term: &String) -> Result<Vec<Uuid>, Box<dy
             Err(e) => return Err(Box::new(e)),
         }
     }
-    println!("results: {:?}", results);
+    // println!("results: {:?}", results);
     Ok(results)
 }
 
@@ -416,36 +440,8 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
     use rusqlite::DatabaseName;
-    use unicode_segmentation::UnicodeSegmentation;
 
     const ID_STR: &str = "ba652e2d-b248-4bcc-b36e-c26c0d0e8002";
-
-    #[test]
-    fn split_multi_line_string() -> Result<(), Box<dyn Error>> {
-        let s = r#"Lorem ipsum (dolor) sit amet, consectetur
-second line?
-
-that was an [empty] line.
-"#;
-        let expect: Vec<&str> = vec![
-            "Lorem",
-            "ipsum",
-            "dolor",
-            "sit",
-            "amet",
-            "consectetur",
-            "second",
-            "line",
-            "that",
-            "was",
-            "an",
-            "empty",
-            "line",
-        ];
-        let split: Vec<&str> = s.unicode_words().collect();
-        assert_eq!(expect, split);
-        Ok(())
-    }
 
     // This prepares an in-memory database for testing. This avoids database file name collisions
     // and allows each unit test to use congruent data yet be completely isolated. This function
@@ -523,6 +519,37 @@ that was an [empty] line.
             return Ok(());
         }
         panic!("{}", "could not get snip from uuid");
+    }
+
+    #[test]
+    fn test_insert_snip() -> Result<(), Box<dyn Error>> {
+        let conn = prepare_database().expect("preparing in-memory database");
+        let id = Uuid::new_v4();
+
+        let s = Snip {
+            name: "Test".to_string(),
+            uuid: id,
+            timestamp: chrono::Local::now().fixed_offset(),
+            text: "Test Data".to_string(),
+            analysis: SnipAnalysis {
+                words: Vec::new(),
+            }
+        };
+        insert_snip(&conn, &s)?;
+
+        // verify
+        let mut stmt = conn.prepare("SELECT uuid FROM snip WHERE uuid = ?")?;
+        let mut rows = stmt.query([id.to_string()])?;
+        while let Some(row) = rows.next()? {
+            let id_str: String = row.get(0)?;
+            let id_check: Uuid = match Uuid::parse_str(id_str.as_str()) {
+                Ok(v) => v,
+                Err(e) => panic!("{}", e),
+            };
+            assert_eq!(id, id_check);
+        }
+
+        Ok(())
     }
 
     #[test]

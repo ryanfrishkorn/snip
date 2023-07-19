@@ -3,9 +3,12 @@ pub mod snip;
 use clap::{Arg, ArgAction, Command};
 use rusqlite::{Connection, OpenFlags, Result};
 use rust_stemmers::{Algorithm, Stemmer};
+use snip::{Snip, SnipAnalysis};
 use std::error::Error;
 use std::{env};
+use std::io::Read;
 use unicode_segmentation::UnicodeSegmentation;
+use uuid::Uuid;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let cmd = Command::new("snip-rs")
@@ -16,6 +19,21 @@ fn main() -> Result<(), Box<dyn Error>> {
             .action(ArgAction::SetTrue)
         )
         .subcommand_required(true)
+        .subcommand(
+            Command::new("add")
+                .about("Add new snip to database")
+                .arg_required_else_help(false)
+                .arg(Arg::new("file")
+                    .short('f')
+                    .long("file")
+                    .num_args(1)
+                )
+                .arg(Arg::new("name")
+                    .short('n')
+                    .long("name")
+                    .num_args(1)
+                )
+        )
         .subcommand(
             Command::new("get")
                 .about("Get from uuid")
@@ -58,7 +76,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         )
         .subcommand(
             Command::new("split")
-                .about("Split a string into words")
+                .about("Split stdin into words")
                 .arg_required_else_help(false)
                 .arg(Arg::new("string"))
         )
@@ -81,8 +99,38 @@ fn main() -> Result<(), Box<dyn Error>> {
         true => Connection::open_with_flags(db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?,
         false => Connection::open(db_path)?,
     };
+    // ensure that tables are present for basic functionality
+    snip::create_snip_tables(&conn)?;
 
     // process all subcommands as in: https://docs.rs/clap/latest/clap/_derive/_cookbook/git/index.html
+    // ADD
+    if let Some(("add", sub_matches)) = matches.subcommand() {
+        let name = match sub_matches.get_one::<String>("name") {
+            Some(v) => v,
+            None => panic!("{}", "provide a name"),
+        };
+        let mut text: String = String::new();
+        match sub_matches.get_one::<String>("file") {
+            Some(v) => text = std::fs::read_to_string(v)?,
+            None => {
+                std::io::stdin().read_to_string(&mut text)?; // FIXME I don't like this
+            },
+        };
+
+        // create document
+        let s = Snip {
+            uuid: Uuid::new_v4(),
+            name: name.to_owned(),
+            timestamp: chrono::Local::now().fixed_offset(),
+            text,
+            analysis: SnipAnalysis {
+                words: vec![],
+            }
+        };
+
+        snip::insert_snip(&conn, &s)?;
+        println!("added uuid: {}", s.uuid);
+    }
 
     // GET
     if let Some(("get", sub_matches)) = matches.subcommand() {
@@ -138,10 +186,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     // SEARCH
     if let Some(("search", sub_matches)) = matches.subcommand() {
         if let Some(args) = sub_matches.get_many::<String>("terms") {
-            let terms: Vec<String> = args.map(|x| x.to_string()).collect();
-            println!("terms: {:?}", terms);
-            for term in terms {
-                let _ = snip::search_data(&conn, &term);
+            let terms: Vec<String> = args.map(|x| x.to_owned()).collect();
+            let terms_stem = stem_vec(terms.clone());
+            println!("terms: {:?}", terms_stem);
+            for (i, term) in terms_stem.iter().enumerate() {
+                let results = snip::search_data(&conn, term)?;
+                println!("results ({}): {:?}", terms[i], results);
             }
         }
     }
@@ -178,4 +228,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
+}
+
+fn stem_vec(words: Vec<String>) -> Vec<String> {
+    let stemmer = Stemmer::create(Algorithm::English);
+    words.iter().map(|w| stemmer.stem(w).to_string()).collect()
 }
