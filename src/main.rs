@@ -154,11 +154,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             None => panic!("{}", "need uuid"),
         };
         // search for unique uuid to allow partial string arg
-        let id_str_full = match snip::search_uuid(&conn, id_str) {
+        let id = match snip::search_uuid(&conn, id_str) {
             Ok(v) => v,
             Err(e) => panic!("{}", e),
         };
-        let mut s = match snip::get_from_uuid(&conn, &id_str_full.to_string()) {
+        let mut s = match snip::get_from_uuid(&conn, id) {
             Ok(v) => v,
             Err(e) => panic!("{}", e),
         };
