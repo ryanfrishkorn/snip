@@ -1,12 +1,14 @@
 use chrono::{DateTime, FixedOffset};
-use rusqlite::{Connection};
+use rusqlite::Connection;
 use rust_stemmers::Stemmer;
 use std::error::Error;
-use std::{io};
+use std::fmt;
+use std::io;
 use std::io::{ErrorKind, Read};
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 
+#[derive(Debug)]
 /// Snip is the main struct representing a document.
 pub struct Snip {
     pub uuid: Uuid,
@@ -16,11 +18,13 @@ pub struct Snip {
     pub analysis: SnipAnalysis,
 }
 
+/// Analysis of the document derived from
 #[derive(Debug)]
 pub struct SnipAnalysis {
     pub words: Vec<SnipWord>,
 }
 
+/// Represents a word in the document, along with meta information derived from document analysis
 #[derive(Debug)]
 pub struct SnipWord {
     pub word: String,
@@ -30,14 +34,16 @@ pub struct SnipWord {
 }
 
 impl Snip {
-    pub fn analyze(&mut self) {
-        self.split_words();
-        self.stem_words();
-        self.scan_fragments();
+    pub fn analyze(&mut self) -> Result<(), SnipError>{
+        self.split_words()?;
+        self.stem_words()?;
+        self.scan_fragments()?;
+
+        Ok(())
     }
 
-    // scans and assigns all prefix and suffix strings to all analyzed words
-    pub fn scan_fragments(&mut self) {
+    /// scans and assigns all prefix and suffix strings to all analyzed words
+    pub fn scan_fragments(&mut self) -> Result<(), SnipError> {
         // scan the document for tokens, in order collecting surrounding data for each token
         let mut fragments: Vec<(usize, usize)> = Vec::new();
         let mut prefixes: Vec<Option<String>> = Vec::new();
@@ -124,9 +130,11 @@ impl Snip {
 
         // assign last suffix
         self.analysis.words[prefixes.len() - 1].suffix = suffix;
+        Ok(())
     }
 
-    pub fn split_words(&mut self) {
+    /// Splits the document text and writes words the the analysis
+    pub fn split_words(&mut self) -> Result<(), SnipError> {
         let words = self.text.unicode_words().map(|x| x.to_string()).collect::<Vec<String>>();
 
         for word in words {
@@ -139,9 +147,11 @@ impl Snip {
             };
             self.analysis.words.push(word_analyzed);
         }
+        Ok(())
     }
 
-    fn stem_words(&mut self) {
+    /// Stems the document words and writes the stems to the analysis.
+    fn stem_words(&mut self) -> Result<(), SnipError> {
         let stemmer =  Stemmer::create(rust_stemmers::Algorithm::English);
 
         for word_analyzed in self.analysis.words.iter_mut() {
@@ -149,10 +159,12 @@ impl Snip {
             let stem = stemmer.stem(word_tmp.as_str());
             word_analyzed.stem = stem.to_string();
         }
+        Ok(())
     }
 
 }
 
+/// Adds a new document to the database
 pub fn insert_snip(conn: &Connection, s: &Snip) -> Result<(), Box<dyn Error>> {
     let mut stmt = conn.prepare("INSERT INTO snip(uuid, timestamp, name, data) VALUES (?1, ?2, ?3, ?4)")?;
     stmt.execute([s.uuid.to_string(), s.timestamp.to_rfc3339(), s.name.clone(), s.text.clone()])?;
@@ -182,7 +194,7 @@ pub fn create_index_table(conn: &Connection) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-// returns the character index of a fully matched word
+// Returns the character index of a fully matched word
 pub fn find_by_graph(word: &str, text: Vec<&str>) -> Option<usize> {
     let word_graphs: Vec<&str> = word.graphemes(true).collect();
     let mut match_buf: Vec<&str> = Vec::new();
@@ -246,13 +258,15 @@ pub fn get_from_uuid(conn: &Connection, id_str: &str) -> Result<Snip, Box<dyn Er
     )))
 }
 
-pub fn index_all_items(conn: &Connection) -> Result<(), Box<dyn Error>> {
+pub fn index_all_items(conn: &Connection) -> Result<(), SnipError> {
     // iterate through snips
-    let mut stmt = conn.prepare("SELECT uuid, timestamp, name, data FROM snip")?;
+    let mut stmt = conn.prepare("SELECT uuid, timestamp, name, data FROM snip").expect("preparing statement");
 
     let query_iter = stmt.query_map([], |row| {
-        let ts: String = row.get(1)?;
-        // let ts_parsed = DateTime::parse_from_rfc3339(ts.as_str())?;
+        let ts: String = match row.get(1) {
+            Ok(v) => v,
+            Err(e) => return Err(e),
+        };
         let ts_parsed;
         match DateTime::parse_from_rfc3339(ts.as_str()) {
             Ok(v) => ts_parsed = v,
@@ -268,7 +282,7 @@ pub fn index_all_items(conn: &Connection) -> Result<(), Box<dyn Error>> {
             Err(e) => panic!("parsing uuid: {}", e),
         };
 
-        Ok(Snip {
+        let s = Snip {
             uuid: id,
             name: row.get(2)?,
             timestamp: ts_parsed,
@@ -276,21 +290,25 @@ pub fn index_all_items(conn: &Connection) -> Result<(), Box<dyn Error>> {
             analysis: SnipAnalysis {
                 words: vec![],
             }
-        })
-    })?;
+        };
+        Ok(s)
+    }).expect("building query map");
 
     for snip in query_iter {
-        let s = snip.unwrap();
+        let mut s = snip.unwrap();
+        match s.analyze() {
+            Ok(_) => (),
+            Err(e) => return Err(e),
+        }
         index_item(conn, &s)?;
     }
 
-    // obtain stem
     // perform analysis
-    // write to new database index
+    // write to database index
     Ok(())
 }
 
-pub fn index_item(_conn: &Connection, _s: &Snip) -> Result<(), Box<dyn Error>> {
+pub fn index_item(_conn: &Connection, _s: &Snip) -> Result<(), SnipError> {
     Ok(())
 }
 
@@ -446,6 +464,32 @@ pub fn strip_punctuation(s: &str) -> &str {
     clean
 }
 
+/// Errors for Snip Analysis
+pub enum SnipError {
+    Analysis(String),
+    Database(rusqlite::Error),
+}
+
+impl Error for SnipError {}
+
+impl fmt::Display for SnipError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SnipError::Analysis(s) => write!(f, "Analysis encountered an error: {}", s),
+            SnipError::Database(e) => write!(f, "Database error: {}", e),
+        }
+    }
+}
+
+impl fmt::Debug for SnipError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SnipError::Analysis(s) => write!(f, "{{ SnipError::Analysis({}) file: {}, line: {} }}", s, file!(), line!()),
+            SnipError::Database(e) => write!(f, "{{ SnipError::Database({}) file: {}, line: {} }}", e, file!(), line!()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -479,9 +523,9 @@ mod tests {
 
             // gather record data
             let id = record.get(0).expect("getting uuid field");
-            let timestamp = record.get(1).expect("getting uuid field");
-            let name = record.get(2).expect("getting uuid field");
-            let data = record.get(3).expect("getting uuid field");
+            let timestamp = record.get(1).expect("getting timestamp field");
+            let name = record.get(2).expect("getting name field");
+            let data = record.get(3).expect("getting data field");
 
             // insert the record
             let mut stmt = conn.prepare("INSERT INTO snip(uuid, timestamp, name, data) VALUES (:id, :timestamp, :name, :data)")?;
@@ -493,7 +537,7 @@ mod tests {
             let record = r?;
 
             let id = record.get(0).expect("getting attachment uuid field");
-            let snip_id = record.get(1).expect("getting attachment uuid field");
+            let snip_id = record.get(1).expect("getting uuid field");
             let timestamp = record.get(2).expect("getting timestamp field");
             let name = record.get(3).expect("getting name field");
             let size = record.get(4).expect("getting size field");
@@ -566,7 +610,7 @@ mod tests {
     #[test]
     fn test_remove_snip() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database().expect("preparing in-memory database");
-        let id = Uuid::try_parse("ba652e2d-b248-4bcc-b36e-c26c0d0e8002")?;
+        let id = Uuid::try_parse(ID_STR)?;
         remove_snip(&conn, id)?;
 
         // verify it was deleted

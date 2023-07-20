@@ -4,8 +4,8 @@ use clap::{Arg, ArgAction, Command};
 use rusqlite::{Connection, OpenFlags, Result};
 use rust_stemmers::{Algorithm, Stemmer};
 use snip::{Snip, SnipAnalysis};
-use std::error::Error;
 use std::{env};
+use std::error::Error;
 use std::io::Read;
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
@@ -187,7 +187,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         if let Some(analyze) = sub_matches.get_one::<bool>("analyze") {
             if *analyze {
                 // analyze
-                s.analyze();
+                match s.analyze() {
+                    Ok(_) => (),
+                    Err(e) => return Err(Box::new(e)),
+                }
                 println!("{:#?}\n", s.analysis);
             }
         }
@@ -264,7 +267,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     // INDEX
     if let Some(("index", _)) = matches.subcommand() {
         snip::create_index_table(&conn)?;
-        snip::index_all_items(&conn)?;
+        if let Err(e) = snip::index_all_items(&conn) {
+            return Err(Box::new(e));
+        }
     }
 
     Ok(())
