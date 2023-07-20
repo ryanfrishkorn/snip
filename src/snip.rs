@@ -221,84 +221,38 @@ pub fn find_by_graph(word: &str, text: Vec<&str>) -> Option<usize> {
 /// Get the snip specified matching the given full-length uuid string.
 pub fn get_from_uuid(conn: &Connection, id_str: &str) -> Result<Snip, Box<dyn Error>> {
     let mut stmt = conn.prepare("SELECT uuid, timestamp, name, data FROM snip WHERE uuid = :id")?;
+    let rows = stmt.query_and_then(&[(":id", &id_str)], |row|
+        snip_from_db(
+            row.get(0)?,
+            row.get(1)?,
+            row.get(2)?,
+            row.get(3)?,
+        )
+    )?;
 
-    let query_iter = stmt.query_map(&[(":id", &id_str)], |row| {
-        let ts: String = row.get(1)?;
-        let ts_parsed = match DateTime::parse_from_rfc3339(ts.as_str()) {
-            Ok(v) => v,
-            Err(e) => {
-                panic!("{}", e)
-            }
-        };
-
-        let id_str: String = row.get(0)?;
-        let id = match Uuid::try_parse(id_str.as_str()) {
-            Ok(v) => v,
-            Err(e) => panic!("parsing uuid: {}", e),
-        };
-
-        Ok(Snip {
-            uuid: id,
-            name: row.get(2)?,
-            timestamp: ts_parsed,
-            text: row.get(3)?,
-            analysis: SnipAnalysis {
-                words: vec![],
-            }
-        })
-    })?;
-
-    if let Some(s) = query_iter.flatten().next() {
+    if let Some(s) = rows.into_iter().flatten().next() {
         return Ok(s);
     }
-
-    Err(Box::new(io::Error::new(
-        ErrorKind::NotFound,
-        "not found",
-    )))
+    Err(Box::new(SnipError::UuidNotFound(id_str.to_string())))
 }
 
-pub fn index_all_items(conn: &Connection) -> Result<(), SnipError> {
+pub fn index_all_items(conn: &Connection) -> Result<(), Box<dyn Error>> {
     // iterate through snips
-    let mut stmt = conn.prepare("SELECT uuid, timestamp, name, data FROM snip").expect("preparing statement");
+    let mut stmt = conn.prepare("SELECT uuid, timestamp, name, data FROM snip")?;
+    let rows = stmt.query_and_then([], |row|
+        snip_from_db(
+            row.get(0)?,
+            row.get(1)?,
+            row.get(2)?,
+            row.get(3)?,
+        )
+    )?;
 
-    let query_iter = stmt.query_map([], |row| {
-        let ts: String = match row.get(1) {
-            Ok(v) => v,
-            Err(e) => return Err(e),
-        };
-        let ts_parsed;
-        match DateTime::parse_from_rfc3339(ts.as_str()) {
-            Ok(v) => ts_parsed = v,
-            Err(e) => {
-                println!("ts: {}", ts);
-                panic!("{}", e)
-            }
-        };
-
-        let id_str: String = row.get(0)?;
-        let id = match Uuid::try_parse(id_str.as_str()) {
-            Ok(v) => v,
-            Err(e) => panic!("parsing uuid: {}", e),
-        };
-
-        let s = Snip {
-            uuid: id,
-            name: row.get(2)?,
-            timestamp: ts_parsed,
-            text: row.get(3)?,
-            analysis: SnipAnalysis {
-                words: vec![],
-            }
-        };
-        Ok(s)
-    }).expect("building query map");
-
-    for snip in query_iter {
+    for snip in rows {
         let mut s = snip.unwrap();
         match s.analyze() {
             Ok(_) => (),
-            Err(e) => return Err(e),
+            Err(e) => return Err(Box::new(e)),
         }
         index_item(conn, &s)?;
     }
@@ -445,6 +399,29 @@ pub fn search_uuid(conn: &Connection, id_partial: &str) -> Result<Uuid, Box<dyn 
     Err(err_not_found)
 }
 
+// Returns a Snip struct parsing from database values
+fn snip_from_db(id: String, ts: String, name: String, text: String) -> Result<Snip, Box<dyn Error>> {
+    let timestamp = match DateTime::parse_from_rfc3339(ts.as_str()) {
+        Ok(v) => v,
+        Err(e) => return Err(Box::new(e)),
+    };
+
+    let uuid = match Uuid::try_parse(id.as_str()) {
+        Ok(v) => v,
+        Err(e) => return Err(Box::new(e)),
+    };
+
+    Ok(Snip {
+        uuid,
+        name,
+        timestamp,
+        text,
+        analysis: SnipAnalysis {
+            words: vec![],
+        }
+    })
+}
+
 pub fn split_uuid(uuid: Uuid) -> Vec<String> {
     uuid.to_string().split('-').map(|s| s.to_string()).collect()
 }
@@ -467,7 +444,7 @@ pub fn strip_punctuation(s: &str) -> &str {
 /// Errors for Snip Analysis
 pub enum SnipError {
     Analysis(String),
-    Database(rusqlite::Error),
+    UuidNotFound(String),
 }
 
 impl Error for SnipError {}
@@ -476,7 +453,7 @@ impl fmt::Display for SnipError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             SnipError::Analysis(s) => write!(f, "Analysis encountered an error: {}", s),
-            SnipError::Database(e) => write!(f, "Database error: {}", e),
+            SnipError::UuidNotFound(s) => write!(f, "uuid {} was not found", s),
         }
     }
 }
@@ -485,7 +462,7 @@ impl fmt::Debug for SnipError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             SnipError::Analysis(s) => write!(f, "{{ SnipError::Analysis({}) file: {}, line: {} }}", s, file!(), line!()),
-            SnipError::Database(e) => write!(f, "{{ SnipError::Database({}) file: {}, line: {} }}", e, file!(), line!()),
+            SnipError::UuidNotFound(s) => write!(f, "{{ SnipError::UuidNotFound({}) file: {}, line: {} }}", s, file!(), line!()),
         }
     }
 }

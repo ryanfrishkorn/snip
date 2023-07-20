@@ -267,9 +267,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // INDEX
     if let Some(("index", _)) = matches.subcommand() {
         snip::create_index_table(&conn)?;
-        if let Err(e) = snip::index_all_items(&conn) {
-            return Err(Box::new(e));
-        }
+        snip::index_all_items(&conn)?;
     }
 
     Ok(())
