@@ -42,6 +42,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 .action(ArgAction::SetTrue),
                         )
                         .arg(
+                            Arg::new("size")
+                                .short('s')
+                                .num_args(0)
+                                .action(ArgAction::SetTrue),
+                        )
+                        .arg(
                             Arg::new("time")
                                 .short('t')
                                 .num_args(0)
@@ -166,18 +172,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let a = snip::get_attachment_from_uuid(&conn, id)?;
 
                 // uuid
-                if let Some(long) = attach_sub_matches.get_one::<bool>("long") {
-                    match *long {
-                        true => print!("{} ", a.uuid),
-                        false => print!("{} ", snip::split_uuid(a.uuid)[0]),
-                    }
+                if attach_sub_matches.get_flag("long") {
+                    print!("{} ", a.uuid);
+                } else {
+                    print!("{} ", snip::split_uuid(a.uuid)[0]);
                 }
 
                 // timestamp
-                if let Some(time) = attach_sub_matches.get_one::<bool>("time") {
-                    if *time {
-                        print!("{} ", a.timestamp);
-                    }
+                if attach_sub_matches.get_flag("time") {
+                    print!("{} ", a.timestamp);
+                }
+
+                // size
+                if attach_sub_matches.get_flag("size") {
+                    print!("{:9} ", a.size);
                 }
 
                 // name
