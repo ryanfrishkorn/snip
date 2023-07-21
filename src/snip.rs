@@ -166,20 +166,6 @@ impl Snip {
     }
 }
 
-/// Adds a new document to the database
-pub fn insert_snip(conn: &Connection, s: &Snip) -> Result<(), Box<dyn Error>> {
-    let mut stmt =
-        conn.prepare("INSERT INTO snip(uuid, timestamp, name, data) VALUES (?1, ?2, ?3, ?4)")?;
-    stmt.execute([
-        s.uuid.to_string(),
-        s.timestamp.to_rfc3339(),
-        s.name.clone(),
-        s.text.clone(),
-    ])?;
-
-    Ok(())
-}
-
 /// Create the main tables used to store documents, attachments, and document matrix.
 pub fn create_snip_tables(conn: &Connection) -> Result<(), Box<dyn Error>> {
     let mut stmt = conn.prepare(
@@ -263,6 +249,20 @@ pub fn index_all_items(conn: &Connection) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn index_item(_conn: &Connection, _s: &Snip) -> Result<(), SnipError> {
+    Ok(())
+}
+
+/// Adds a new document to the database
+pub fn insert_snip(conn: &Connection, s: &Snip) -> Result<(), Box<dyn Error>> {
+    let mut stmt =
+        conn.prepare("INSERT INTO snip(uuid, timestamp, name, data) VALUES (?1, ?2, ?3, ?4)")?;
+    stmt.execute([
+        s.uuid.to_string(),
+        s.timestamp.to_rfc3339(),
+        s.name.clone(),
+        s.text.clone(),
+    ])?;
+
     Ok(())
 }
 
