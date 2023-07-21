@@ -165,6 +165,14 @@ impl Snip {
         Ok(())
     }
 }
+/// Attachment represents binary data attached to a document
+pub struct Attachment {
+    pub uuid: Uuid,
+    pub snip_uuid: Uuid,
+    pub name: String,
+    // pub data: Vec<u8>,
+    pub timestamp: DateTime<FixedOffset>,
+}
 
 /// Create the main tables used to store documents, attachments, and document matrix.
 pub fn create_snip_tables(conn: &Connection) -> Result<(), Box<dyn Error>> {
@@ -212,6 +220,55 @@ pub fn find_by_graph(word: &str, text: Vec<&str>) -> Option<usize> {
         }
     }
     None
+}
+
+fn attachment_from_db(
+    id: String,
+    snip_id: String,
+    ts: String,
+    name: String,
+    // data: String, // special case for now
+) -> Result<Attachment, Box<dyn Error>> {
+    let uuid = Uuid::try_parse(id.as_str())?;
+    let snip_uuid = Uuid::try_parse(snip_id.as_str())?;
+    let timestamp = DateTime::parse_from_rfc3339(ts.as_str())?;
+
+    Ok(Attachment {
+        uuid,
+        snip_uuid,
+        timestamp,
+        name,
+    })
+}
+
+/// Get an attachment from database
+pub fn get_attachment_from_uuid(conn: &Connection, id: Uuid) -> Result<Attachment, Box<dyn Error>> {
+    let mut stmt = conn
+        .prepare("SELECT uuid, snip_uuid, timestamp, name FROM snip_attachment WHERE uuid = :id")?;
+    let rows = stmt.query_and_then(&[(":id", &id.to_string())], |row| {
+        attachment_from_db(row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)
+    })?;
+
+    if let Some(a) = rows.into_iter().flatten().next() {
+        return Ok(a);
+    }
+    Err(Box::new(SnipError::UuidNotFound(
+        "could not find uuid".to_string(),
+    )))
+}
+
+/// Return a vector of all attachment uuids
+pub fn get_attachment_all(conn: &Connection) -> Result<Vec<Uuid>, Box<dyn Error>> {
+    let mut stmt = conn.prepare("SELECT uuid FROM snip_attachment")?;
+    let query_iter = stmt.query_and_then([], |row| row.get::<_, String>(0))?;
+
+    let mut ids: Vec<Uuid> = Vec::new();
+    for id in query_iter {
+        let id_str = id.unwrap();
+        let id_parsed = Uuid::try_parse(id_str.as_str())?;
+        ids.push(id_parsed);
+    }
+    Ok(ids)
 }
 
 /// Get the snip specified matching the given full-length uuid string.
@@ -496,6 +553,7 @@ mod tests {
     use std::collections::HashMap;
 
     const ID_STR: &str = "ba652e2d-b248-4bcc-b36e-c26c0d0e8002";
+    const ID_ATTACH_STR: &str = "9cfc5a2d-2946-48ee-82e0-227ba4bcdbd5";
 
     // This prepares an in-memory database for testing. This avoids database file name collisions
     // and allows each unit test to use congruent data yet be completely isolated. This function
@@ -568,6 +626,20 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn test_get_attachment_from_uuid() -> Result<(), ()> {
+        let conn = prepare_database().expect("preparing in-memory database");
+
+        let id = Uuid::try_parse(ID_ATTACH_STR).expect("parsing attachment uuid string");
+        if let Ok(a) = get_attachment_from_uuid(&conn, id) {
+            println!("{} {}", id, a.uuid);
+            if a.uuid == id {
+                return Ok(());
+            }
+        }
+        Err(())
     }
 
     #[test]

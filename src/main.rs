@@ -28,6 +28,28 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .arg(Arg::new("name").short('n').long("name").num_args(1)),
         )
         .subcommand(
+            Command::new("attach")
+                .about("Attach binary data to document")
+                .subcommand_required(true)
+                .subcommand(
+                    Command::new("ls")
+                        .about("list attachments")
+                        .arg_required_else_help(false)
+                        .arg(
+                            Arg::new("long")
+                                .short('l')
+                                .num_args(0)
+                                .action(ArgAction::SetTrue),
+                        )
+                        .arg(
+                            Arg::new("time")
+                                .short('t')
+                                .num_args(0)
+                                .action(ArgAction::SetTrue),
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("get")
                 .about("Get from uuid")
                 .arg_required_else_help(true)
@@ -134,6 +156,36 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         snip::insert_snip(&conn, &s)?;
         println!("added uuid: {}", s.uuid);
+    }
+
+    // ATTACH
+    if let Some(("attach", sub_matches)) = matches.subcommand() {
+        // ATTACH LS
+        if let Some(("ls", attach_sub_matches)) = sub_matches.subcommand() {
+            let ids = snip::get_attachment_all(&conn)?;
+            for id in ids {
+                let a = snip::get_attachment_from_uuid(&conn, id)?;
+
+                // uuid
+                if let Some(long) = attach_sub_matches.get_one::<bool>("long") {
+                    match *long {
+                        true => print!("{} ", a.uuid),
+                        false => print!("{} ", snip::split_uuid(a.uuid)[0]),
+                    }
+                }
+
+                // timestamp
+                if let Some(time) = attach_sub_matches.get_one::<bool>("time") {
+                    if *time {
+                        print!("{} ", a.timestamp);
+                    }
+                }
+
+                // name
+                print!("{}", a.name);
+                println!();
+            }
+        }
     }
 
     // GET
