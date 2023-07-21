@@ -4,7 +4,7 @@ use clap::{Arg, ArgAction, Command};
 use rusqlite::{Connection, OpenFlags, Result};
 use rust_stemmers::{Algorithm, Stemmer};
 use snip::{Snip, SnipAnalysis};
-use std::{env};
+use std::env;
 use std::error::Error;
 use std::io::Read;
 use unicode_segmentation::UnicodeSegmentation;
@@ -14,92 +14,83 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cmd = Command::new("snip-rs")
         .bin_name("snip-rs")
         .arg_required_else_help(true)
-        .arg(Arg::new("read-only")
-            .long("read-only")
-            .action(ArgAction::SetTrue)
+        .arg(
+            Arg::new("read-only")
+                .long("read-only")
+                .action(ArgAction::SetTrue),
         )
         .subcommand_required(true)
         .subcommand(
             Command::new("add")
                 .about("Add new snip to database")
                 .arg_required_else_help(false)
-                .arg(Arg::new("file")
-                    .short('f')
-                    .long("file")
-                    .num_args(1)
-                )
-                .arg(Arg::new("name")
-                    .short('n')
-                    .long("name")
-                    .num_args(1)
-                )
+                .arg(Arg::new("file").short('f').long("file").num_args(1))
+                .arg(Arg::new("name").short('n').long("name").num_args(1)),
         )
         .subcommand(
             Command::new("get")
                 .about("Get from uuid")
                 .arg_required_else_help(true)
                 .arg(Arg::new("uuid"))
-                .arg(Arg::new("analyze")
-                    .long("analyze")
-                    .short('a')
-                    .num_args(0)
-                    .action(ArgAction::SetTrue)
+                .arg(
+                    Arg::new("analyze")
+                        .long("analyze")
+                        .short('a')
+                        .num_args(0)
+                        .action(ArgAction::SetTrue),
                 )
-                .arg(Arg::new("raw")
-                    .long("raw")
-                    .short('r')
-                    .num_args(0)
-                    .action(ArgAction::SetTrue)
-                )
+                .arg(
+                    Arg::new("raw")
+                        .long("raw")
+                        .short('r')
+                        .num_args(0)
+                        .action(ArgAction::SetTrue),
+                ),
         )
         .subcommand(
             Command::new("index")
                 .about("Reindex the database")
-                .arg_required_else_help(false)
+                .arg_required_else_help(false),
         )
         .subcommand(
             Command::new("ls")
                 .about("List all snips")
-                .arg(Arg::new("l")
-                    .short('l')
-                    .num_args(0)
-                    .action(ArgAction::SetTrue)
+                .arg(
+                    Arg::new("l")
+                        .short('l')
+                        .num_args(0)
+                        .action(ArgAction::SetTrue),
                 )
-                .arg(Arg::new("t")
-                    .short('t')
-                    .num_args(0)
-                    .action(ArgAction::SetTrue)
-                )
+                .arg(
+                    Arg::new("t")
+                        .short('t')
+                        .num_args(0)
+                        .action(ArgAction::SetTrue),
+                ),
         )
         .subcommand(
             Command::new("rm")
                 .about("Remove items")
                 .arg_required_else_help(true)
-                .arg(Arg::new("ids")
-                    .action(ArgAction::Append)
-                    .required(true)
-                )
+                .arg(Arg::new("ids").action(ArgAction::Append).required(true)),
         )
         .subcommand(
             Command::new("search")
                 .about("Search for terms")
                 .arg_required_else_help(true)
-                .arg(Arg::new("terms")
-                    .action(ArgAction::Append)
-                    .required(true)
-                )
+                .arg(Arg::new("terms").action(ArgAction::Append).required(true)),
         )
         .subcommand(
             Command::new("split")
                 .about("Split stdin into words")
                 .arg_required_else_help(false)
-                .arg(Arg::new("string"))
+                .arg(Arg::new("string")),
         )
         .subcommand(
             Command::new("stem")
                 .about("Stem word from stdin")
                 .arg_required_else_help(false)
-                .arg(Arg::new("words"))
+                .arg(Arg::new("words")),
         );
 
     let matches = cmd.get_matches();
@@ -129,7 +120,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             Some(v) => text = std::fs::read_to_string(v)?,
             None => {
                 std::io::stdin().read_to_string(&mut text)?; // FIXME I don't like this
-            },
+            }
         };
 
         // create document
@@ -138,9 +129,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             name: name.to_owned(),
             timestamp: chrono::Local::now().fixed_offset(),
             text,
-            analysis: SnipAnalysis {
-                words: vec![],
-            }
+            analysis: SnipAnalysis { words: vec![] },
         };
 
         snip::insert_snip(&conn, &s)?;
@@ -198,14 +187,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // HELP
     if let Some(("help", _)) = matches.subcommand() {
-            println!("help");
+        println!("help");
     }
 
     // LS
     if let Some(("ls", _)) = matches.subcommand() {
         // honor arguments if present
         if let Some(arg_matches) = matches.subcommand_matches("ls") {
-            snip::list_snips(&conn, arg_matches.get_flag("l"), arg_matches.get_flag("t")).expect("could not list snips");
+            snip::list_snips(&conn, arg_matches.get_flag("l"), arg_matches.get_flag("t"))
+                .expect("could not list snips");
         } else {
             // default no args
             snip::list_snips(&conn, false, false).expect("could not list snips");

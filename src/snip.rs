@@ -34,7 +34,7 @@ pub struct SnipWord {
 }
 
 impl Snip {
-    pub fn analyze(&mut self) -> Result<(), SnipError>{
+    pub fn analyze(&mut self) -> Result<(), SnipError> {
         self.split_words()?;
         self.stem_words()?;
         self.scan_fragments()?;
@@ -63,7 +63,7 @@ impl Snip {
                 None => break, // no more data left
             };
 
-            let offset_match = match find_by_graph(&word.word, text_slice){
+            let offset_match = match find_by_graph(&word.word, text_slice) {
                 Some(v) => v,
                 None => break, // we must be at the end here
             };
@@ -79,14 +79,14 @@ impl Snip {
                 for (i, c) in text_graphs[offset..].iter().enumerate() {
                     if i < cur {
                         // println!("skip");
-                        continue
+                        continue;
                     }
                     if i < fragment_pre_len {
                         // println!("cursor: {} push: {}", cur, *c);
                         prefix_buf.push(c.to_string());
                         cur += 1;
                     } else {
-                        break
+                        break;
                     }
                 }
                 // println!("prefix_buf: \"{}\"", prefix_buf);
@@ -103,7 +103,6 @@ impl Snip {
 
             // LAST ITERATION
             if i == self.analysis.words.len() - 1 {
-
                 // offset less than length indicates a suffix remains
                 if offset < text_graphs.len() {
                     let mut suffix_buf: Vec<String> = Vec::new();
@@ -135,7 +134,11 @@ impl Snip {
 
     /// Splits the document text and writes words the the analysis
     pub fn split_words(&mut self) -> Result<(), SnipError> {
-        let words = self.text.unicode_words().map(|x| x.to_string()).collect::<Vec<String>>();
+        let words = self
+            .text
+            .unicode_words()
+            .map(|x| x.to_string())
+            .collect::<Vec<String>>();
 
         for word in words {
             // create DocWord
@@ -152,7 +155,7 @@ impl Snip {
 
     /// Stems the document words and writes the stems to the analysis.
     fn stem_words(&mut self) -> Result<(), SnipError> {
-        let stemmer =  Stemmer::create(rust_stemmers::Algorithm::English);
+        let stemmer = Stemmer::create(rust_stemmers::Algorithm::English);
 
         for word_analyzed in self.analysis.words.iter_mut() {
             let word_tmp = word_analyzed.word.to_lowercase().clone();
@@ -161,20 +164,27 @@ impl Snip {
         }
         Ok(())
     }
-
 }
 
 /// Adds a new document to the database
 pub fn insert_snip(conn: &Connection, s: &Snip) -> Result<(), Box<dyn Error>> {
-    let mut stmt = conn.prepare("INSERT INTO snip(uuid, timestamp, name, data) VALUES (?1, ?2, ?3, ?4)")?;
-    stmt.execute([s.uuid.to_string(), s.timestamp.to_rfc3339(), s.name.clone(), s.text.clone()])?;
+    let mut stmt =
+        conn.prepare("INSERT INTO snip(uuid, timestamp, name, data) VALUES (?1, ?2, ?3, ?4)")?;
+    stmt.execute([
+        s.uuid.to_string(),
+        s.timestamp.to_rfc3339(),
+        s.name.clone(),
+        s.text.clone(),
+    ])?;
 
     Ok(())
 }
 
 /// Create the main tables used to store documents, attachments, and document matrix.
 pub fn create_snip_tables(conn: &Connection) -> Result<(), Box<dyn Error>> {
-    let mut stmt = conn.prepare("CREATE TABLE IF NOT EXISTS snip(uuid TEXT, timestamp TEXT, name TEXT, data TEXT)")?;
+    let mut stmt = conn.prepare(
+        "CREATE TABLE IF NOT EXISTS snip(uuid TEXT, timestamp TEXT, name TEXT, data TEXT)",
+    )?;
     stmt.raw_execute()?;
 
     let mut stmt = conn.prepare("CREATE TABLE IF NOT EXISTS snip_attachment(uuid TEXT, snip_uuid TEXT, timestamp TEXT, name TEXT, data BLOB, size INTEGER)")?;
@@ -221,14 +231,9 @@ pub fn find_by_graph(word: &str, text: Vec<&str>) -> Option<usize> {
 /// Get the snip specified matching the given full-length uuid string.
 pub fn get_from_uuid(conn: &Connection, id: Uuid) -> Result<Snip, Box<dyn Error>> {
     let mut stmt = conn.prepare("SELECT uuid, timestamp, name, data FROM snip WHERE uuid = :id")?;
-    let rows = stmt.query_and_then(&[(":id", &id.to_string())], |row|
-        snip_from_db(
-            row.get(0)?,
-            row.get(1)?,
-            row.get(2)?,
-            row.get(3)?,
-        )
-    )?;
+    let rows = stmt.query_and_then(&[(":id", &id.to_string())], |row| {
+        snip_from_db(row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)
+    })?;
 
     if let Some(s) = rows.into_iter().flatten().next() {
         return Ok(s);
@@ -239,14 +244,9 @@ pub fn get_from_uuid(conn: &Connection, id: Uuid) -> Result<Snip, Box<dyn Error>
 pub fn index_all_items(conn: &Connection) -> Result<(), Box<dyn Error>> {
     // iterate through snips
     let mut stmt = conn.prepare("SELECT uuid, timestamp, name, data FROM snip")?;
-    let rows = stmt.query_and_then([], |row|
-        snip_from_db(
-            row.get(0)?,
-            row.get(1)?,
-            row.get(2)?,
-            row.get(3)?,
-        )
-    )?;
+    let rows = stmt.query_and_then([], |row| {
+        snip_from_db(row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)
+    })?;
 
     for snip in rows {
         let mut s = snip.unwrap();
@@ -267,7 +267,11 @@ pub fn index_item(_conn: &Connection, _s: &Snip) -> Result<(), SnipError> {
 }
 
 /// Print a list of all documents in the database.
-pub fn list_snips(conn: &Connection, full_uuid: bool, show_time: bool) -> Result<(), Box<dyn Error>> {
+pub fn list_snips(
+    conn: &Connection,
+    full_uuid: bool,
+    show_time: bool,
+) -> Result<(), Box<dyn Error>> {
     let mut stmt = match conn.prepare("SELECT uuid, name, timestamp, data from snip") {
         Ok(v) => v,
         Err(e) => panic!("{}", e),
@@ -292,9 +296,7 @@ pub fn list_snips(conn: &Connection, full_uuid: bool, show_time: bool) -> Result
             name: row.get(1)?,
             timestamp: ts_parsed,
             text: row.get(3)?,
-            analysis: SnipAnalysis {
-                words: vec![],
-            }
+            analysis: SnipAnalysis { words: vec![] },
         })
     })?;
 
@@ -313,12 +315,11 @@ pub fn list_snips(conn: &Connection, full_uuid: bool, show_time: bool) -> Result
         // name
         print!("{} ", s.name);
         println!(); // just for the newline
-        // println!("{} {} {}", split_uuid(id)[0], s.timestamp, s.name);
+                    // println!("{} {} {}", split_uuid(id)[0], s.timestamp, s.name);
     }
 
     Ok(())
 }
-
 
 /// Read all data from standard input, line by line, and return it as a String.
 pub fn read_lines_from_stdin() -> String {
@@ -337,7 +338,10 @@ pub fn remove_snip(conn: &Connection, id: Uuid) -> Result<(), Box<dyn Error>> {
     let n = stmt.execute([id.to_string()]);
     match n {
         Ok(n) if n == 1 => Ok(()),
-        _ => Err(Box::new(io::Error::new(ErrorKind::Other, "delete did not return a singular result"))),
+        _ => Err(Box::new(io::Error::new(
+            ErrorKind::Other,
+            "delete did not return a singular result",
+        ))),
     }
 }
 
@@ -380,7 +384,10 @@ pub fn search_uuid(conn: &Connection, id_partial: &str) -> Result<Uuid, Box<dyn 
     // return only if a singular result is matched
     let mut id_found = "".to_string();
     let mut first_run = true;
-    let err_not_found = Box::new(io::Error::new(ErrorKind::NotFound, "could not find unique uuid match"));
+    let err_not_found = Box::new(io::Error::new(
+        ErrorKind::NotFound,
+        "could not find unique uuid match",
+    ));
     for id in query_iter {
         if first_run {
             first_run = false;
@@ -394,13 +401,18 @@ pub fn search_uuid(conn: &Connection, id_partial: &str) -> Result<Uuid, Box<dyn 
         return match Uuid::parse_str(&id_found) {
             Ok(v) => Ok(v),
             Err(e) => Err(Box::new(e)),
-        }
+        };
     }
     Err(err_not_found)
 }
 
 // Returns a Snip struct parsing from database values
-fn snip_from_db(id: String, ts: String, name: String, text: String) -> Result<Snip, Box<dyn Error>> {
+fn snip_from_db(
+    id: String,
+    ts: String,
+    name: String,
+    text: String,
+) -> Result<Snip, Box<dyn Error>> {
     let timestamp = match DateTime::parse_from_rfc3339(ts.as_str()) {
         Ok(v) => v,
         Err(e) => return Err(Box::new(e)),
@@ -416,9 +428,7 @@ fn snip_from_db(id: String, ts: String, name: String, text: String) -> Result<Sn
         name,
         timestamp,
         text,
-        analysis: SnipAnalysis {
-            words: vec![],
-        }
+        analysis: SnipAnalysis { words: vec![] },
     })
 }
 
@@ -461,8 +471,20 @@ impl fmt::Display for SnipError {
 impl fmt::Debug for SnipError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            SnipError::Analysis(s) => write!(f, "{{ SnipError::Analysis({}) file: {}, line: {} }}", s, file!(), line!()),
-            SnipError::UuidNotFound(s) => write!(f, "{{ SnipError::UuidNotFound({}) file: {}, line: {} }}", s, file!(), line!()),
+            SnipError::Analysis(s) => write!(
+                f,
+                "{{ SnipError::Analysis({}) file: {}, line: {} }}",
+                s,
+                file!(),
+                line!()
+            ),
+            SnipError::UuidNotFound(s) => write!(
+                f,
+                "{{ SnipError::UuidNotFound({}) file: {}, line: {} }}",
+                s,
+                file!(),
+                line!()
+            ),
         }
     }
 }
@@ -470,8 +492,8 @@ impl fmt::Debug for SnipError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use rusqlite::DatabaseName;
+    use std::collections::HashMap;
 
     const ID_STR: &str = "ba652e2d-b248-4bcc-b36e-c26c0d0e8002";
 
@@ -506,7 +528,12 @@ mod tests {
 
             // insert the record
             let mut stmt = conn.prepare("INSERT INTO snip(uuid, timestamp, name, data) VALUES (:id, :timestamp, :name, :data)")?;
-            stmt.execute(&[(":id", id), (":timestamp", timestamp), (":name", name), (":data", data)])?;
+            stmt.execute(&[
+                (":id", id),
+                (":timestamp", timestamp),
+                (":name", name),
+                (":data", data),
+            ])?;
         }
 
         data = csv::Reader::from_path(snip_attachment_file)?;
@@ -535,7 +562,8 @@ mod tests {
             let row_id = conn.last_insert_rowid();
 
             // add binary data to blob
-            let mut blob = conn.blob_open(DatabaseName::Main, "snip_attachment", "data", row_id, false)?;
+            let mut blob =
+                conn.blob_open(DatabaseName::Main, "snip_attachment", "data", row_id, false)?;
             blob.write_at(data, 0)?;
         }
 
@@ -546,7 +574,10 @@ mod tests {
     fn test_get_from_uuid() -> Result<(), ()> {
         let conn = prepare_database().expect("preparing in-memory database");
 
-        if let Ok(s) = get_from_uuid(&conn, Uuid::try_parse(ID_STR).expect("parsing uuid from static string")) {
+        if let Ok(s) = get_from_uuid(
+            &conn,
+            Uuid::try_parse(ID_STR).expect("parsing uuid from static string"),
+        ) {
             println!("{} {} {}", s.uuid, s.timestamp, s.name);
             return Ok(());
         }
@@ -563,9 +594,7 @@ mod tests {
             uuid: id,
             timestamp: chrono::Local::now().fixed_offset(),
             text: "Test Data".to_string(),
-            analysis: SnipAnalysis {
-                words: Vec::new(),
-            }
+            analysis: SnipAnalysis { words: Vec::new() },
         };
         insert_snip(&conn, &s)?;
 
@@ -592,7 +621,10 @@ mod tests {
 
         // verify it was deleted
         match get_from_uuid(&conn, id) {
-            Ok(_) => Err(Box::new(io::Error::new(ErrorKind::Other, "id is still present in database after attempted delete"))),
+            Ok(_) => Err(Box::new(io::Error::new(
+                ErrorKind::Other,
+                "id is still present in database after attempted delete",
+            ))),
             Err(_) => Ok(()),
         }
     }
@@ -601,17 +633,18 @@ mod tests {
     fn test_search_uuid() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database().expect("preparing in-memory database");
 
-        let partials: HashMap<String, String> = HashMap::from([    // ba652e2d-b248-4bcc-b36e-c26c0d0e8002
-            (ID_STR[0..8].to_string(), "segment 1".to_string()),   // ba652e2d
-            (ID_STR[9..13].to_string(), "segment 2".to_string()),  // _________b248
+        let partials: HashMap<String, String> = HashMap::from([
+            // ba652e2d-b248-4bcc-b36e-c26c0d0e8002
+            (ID_STR[0..8].to_string(), "segment 1".to_string()), // ba652e2d
+            (ID_STR[9..13].to_string(), "segment 2".to_string()), // _________b248
             (ID_STR[14..18].to_string(), "segment 3".to_string()), // ______________4bbc
             (ID_STR[19..23].to_string(), "segment 4".to_string()), // ___________________b36e
-            (ID_STR[24..].to_string(), "segment 5".to_string()),   // ________________________c26c0d0e8002
-            (ID_STR[7..12].to_string(), "partial 1".to_string()),  // _______d-b24
-            (ID_STR[7..14].to_string(), "partial 2".to_string()),  // _______d-b248-
-            (ID_STR[7..15].to_string(), "partial 3".to_string()),  // _______d-b248-4
-            (ID_STR[8..19].to_string(), "partial 4".to_string()),  // ________-b248-4bcc-
-            (ID_STR[23..].to_string(), "partial 5".to_string()),   // _______________________-c26c0d0e8002
+            (ID_STR[24..].to_string(), "segment 5".to_string()), // ________________________c26c0d0e8002
+            (ID_STR[7..12].to_string(), "partial 1".to_string()), // _______d-b24
+            (ID_STR[7..14].to_string(), "partial 2".to_string()), // _______d-b248-
+            (ID_STR[7..15].to_string(), "partial 3".to_string()), // _______d-b248-4
+            (ID_STR[8..19].to_string(), "partial 4".to_string()), // ________-b248-4bcc-
+            (ID_STR[23..].to_string(), "partial 5".to_string()), // _______________________-c26c0d0e8002
         ]);
 
         /*
