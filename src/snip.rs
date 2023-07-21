@@ -165,6 +165,7 @@ impl Snip {
         Ok(())
     }
 }
+
 /// Attachment represents binary data attached to a document
 pub struct Attachment {
     pub uuid: Uuid,
@@ -172,6 +173,26 @@ pub struct Attachment {
     pub name: String,
     // pub data: Vec<u8>,
     pub timestamp: DateTime<FixedOffset>,
+}
+
+/// Returns an Attachment struct parsed from the database
+fn attachment_from_db(
+    id: String,
+    snip_id: String,
+    ts: String,
+    name: String,
+    // data: String, // special case for now
+) -> Result<Attachment, Box<dyn Error>> {
+    let uuid = Uuid::try_parse(id.as_str())?;
+    let snip_uuid = Uuid::try_parse(snip_id.as_str())?;
+    let timestamp = DateTime::parse_from_rfc3339(ts.as_str())?;
+
+    Ok(Attachment {
+        uuid,
+        snip_uuid,
+        timestamp,
+        name,
+    })
 }
 
 /// Create the main tables used to store documents, attachments, and document matrix.
@@ -220,25 +241,6 @@ pub fn find_by_graph(word: &str, text: Vec<&str>) -> Option<usize> {
         }
     }
     None
-}
-
-fn attachment_from_db(
-    id: String,
-    snip_id: String,
-    ts: String,
-    name: String,
-    // data: String, // special case for now
-) -> Result<Attachment, Box<dyn Error>> {
-    let uuid = Uuid::try_parse(id.as_str())?;
-    let snip_uuid = Uuid::try_parse(snip_id.as_str())?;
-    let timestamp = DateTime::parse_from_rfc3339(ts.as_str())?;
-
-    Ok(Attachment {
-        uuid,
-        snip_uuid,
-        timestamp,
-        name,
-    })
 }
 
 /// Get an attachment from database
@@ -436,7 +438,7 @@ pub fn search_uuid(conn: &Connection, id_partial: &str) -> Result<Uuid, Box<dyn 
     Err(err_not_found)
 }
 
-// Returns a Snip struct parsing from database values
+/// Returns a Snip struct parsed from the database
 fn snip_from_db(
     id: String,
     ts: String,
