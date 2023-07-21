@@ -329,35 +329,13 @@ pub fn list_snips(
     full_uuid: bool,
     show_time: bool,
 ) -> Result<(), Box<dyn Error>> {
-    let mut stmt = match conn.prepare("SELECT uuid, name, timestamp, data from snip") {
-        Ok(v) => v,
-        Err(e) => panic!("{}", e),
-    };
+    let mut stmt = conn.prepare("SELECT uuid, timestamp, name, data from snip")?;
 
-    let query_iter = stmt.query_map([], |row| {
-        // parse timestamp
-        let ts: String = row.get(2)?;
-        let ts_parsed = match DateTime::parse_from_rfc3339(ts.as_str()) {
-            Ok(v) => v,
-            Err(e) => panic!("{}", e),
-        };
-
-        let id_str: String = row.get(0)?;
-        let id = match Uuid::try_parse(id_str.as_str()) {
-            Ok(v) => v,
-            Err(e) => panic!("parsing uuid: {}", e),
-        };
-
-        Ok(Snip {
-            uuid: id,
-            name: row.get(1)?,
-            timestamp: ts_parsed,
-            text: row.get(3)?,
-            analysis: SnipAnalysis { words: vec![] },
-        })
+    let rows = stmt.query_and_then([], |row| {
+        snip_from_db(row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)
     })?;
 
-    for snip in query_iter {
+    for snip in rows {
         let s = snip.unwrap();
 
         // uuid
@@ -371,22 +349,17 @@ pub fn list_snips(
         }
         // name
         print!("{} ", s.name);
-        println!(); // just for the newline
-                    // println!("{} {} {}", split_uuid(id)[0], s.timestamp, s.name);
+        println!();
     }
 
     Ok(())
 }
 
 /// Read all data from standard input, line by line, and return it as a String.
-pub fn read_lines_from_stdin() -> String {
+pub fn read_lines_from_stdin() -> Result<String, Box<dyn Error>> {
     let mut data = String::new();
-
-    match io::stdin().read_to_string(&mut data) {
-        Ok(_) => (),
-        Err(e) => panic!("{}", e),
-    }
-    data
+    io::stdin().read_to_string(&mut data)?;
+    Ok(data)
 }
 
 /// Remove a document matching given uuid
@@ -405,7 +378,7 @@ pub fn remove_snip(conn: &Connection, id: Uuid) -> Result<(), Box<dyn Error>> {
 /// Returns ids of documents that match the given term
 pub fn search_data(conn: &Connection, term: &String) -> Result<Vec<Uuid>, Box<dyn Error>> {
     let mut stmt = conn.prepare("SELECT uuid FROM snip WHERE data LIKE :term")?;
-    let term_fuzzy = format!("{} {} {}", "%", term, "%");
+    let term_fuzzy = format!("{} {}{}", "%", term, "%");
 
     let query_iter = stmt.query_map(&[(":term", &term_fuzzy)], |row| {
         let id_str: String = row.get(0)?;

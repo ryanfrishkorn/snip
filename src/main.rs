@@ -119,7 +119,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let db_file_default = ".snip.sqlite3".to_string();
     let home_dir = match env::var("HOME") {
         Ok(v) => v,
-        Err(e) => panic!("{}", e),
+        Err(e) => panic!("Could not obtain HOME env: {}", e),
     };
     let db_path = env::var("SNIP_DB").unwrap_or(format!("{}/{}", home_dir, db_file_default));
 
@@ -133,10 +133,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     // process all subcommands as in: https://docs.rs/clap/latest/clap/_derive/_cookbook/git/index.html
     // ADD
     if let Some(("add", sub_matches)) = matches.subcommand() {
-        let name = match sub_matches.get_one::<String>("name") {
-            Some(v) => v,
-            None => panic!("{}", "provide a name"),
-        };
+        let name = sub_matches
+            .get_one::<String>("name")
+            .ok_or("matching name arg")?;
         let mut text: String = String::new();
         match sub_matches.get_one::<String>("file") {
             Some(v) => text = std::fs::read_to_string(v)?,
@@ -190,19 +189,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // GET
     if let Some(("get", sub_matches)) = matches.subcommand() {
-        let id_str = match sub_matches.get_one::<String>("uuid") {
-            Some(v) => v,
-            None => panic!("{}", "need uuid"),
-        };
+        let id_str = sub_matches
+            .get_one::<String>("uuid")
+            .ok_or("uuid not present")?;
+
         // search for unique uuid to allow partial string arg
-        let id = match snip::search_uuid(&conn, id_str) {
-            Ok(v) => v,
-            Err(e) => panic!("{}", e),
-        };
-        let mut s = match snip::get_from_uuid(&conn, id) {
-            Ok(v) => v,
-            Err(e) => panic!("{}", e),
-        };
+        let id = snip::search_uuid(&conn, id_str)?;
+        let mut s = snip::get_from_uuid(&conn, id)?;
 
         // check for raw or formatted output
         if let Some(raw) = sub_matches.get_one::<bool>("raw") {
@@ -285,7 +278,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(("stem", sub_matches)) = matches.subcommand() {
         let input = match sub_matches.get_one::<String>("words") {
             Some(v) => v.to_owned(),
-            None => snip::read_lines_from_stdin(),
+            None => snip::read_lines_from_stdin()?,
         };
         let words = input.unicode_words().collect::<Vec<&str>>();
         let stemmer = Stemmer::create(Algorithm::English);
@@ -300,7 +293,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(("split", sub_matches)) = matches.subcommand() {
         let input = match sub_matches.get_one::<String>("string") {
             Some(v) => v.to_owned(),
-            None => snip::read_lines_from_stdin(),
+            None => snip::read_lines_from_stdin()?,
         };
         let words = input.unicode_words();
         println!("{:?}", words.collect::<Vec<&str>>());
