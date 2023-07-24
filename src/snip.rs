@@ -633,25 +633,19 @@ mod tests {
         let id = Uuid::try_parse(ID_ATTACH_STR).expect("parsing attachment uuid string");
         let a = get_attachment_from_uuid(&conn, id)?;
 
-        // println!("{} {}", id, a.uuid);
-        if a.uuid == id {
-            return Ok(());
+        if a.uuid != id {
+            return Err(Box::new(io::Error::new(ErrorKind::Other, format!("uuid expected: {} got: {}", id, a.uuid))));
         }
-        panic!("{}", "struct data inconsistent");
+        Ok(())
     }
 
     #[test]
-    fn test_get_from_uuid() -> Result<(), ()> {
+    fn test_get_from_uuid() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database().expect("preparing in-memory database");
+        let id = Uuid::try_parse(ID_STR).expect("parsing uuid from static string");
 
-        if let Ok(s) = get_from_uuid(
-            &conn,
-            Uuid::try_parse(ID_STR).expect("parsing uuid from static string"),
-        ) {
-            println!("{} {} {}", s.uuid, s.timestamp, s.name);
-            return Ok(());
-        }
-        panic!("{}", "could not get snip from uuid");
+        let _s = get_from_uuid(&conn, id)?;
+        Ok(())
     }
 
     #[test]
