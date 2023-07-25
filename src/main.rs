@@ -151,7 +151,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         };
 
         // create document
-        let s = Snip {
+        let mut s = Snip {
             uuid: Uuid::new_v4(),
             name: name.to_owned(),
             timestamp: chrono::Local::now().fixed_offset(),
@@ -160,6 +160,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         };
 
         snip::insert_snip(&conn, &s)?;
+        s.index(&conn)?;
         println!("added uuid: {}", s.uuid);
     }
 

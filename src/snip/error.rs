@@ -4,6 +4,7 @@ use std::fmt;
 /// Errors for Snip Analysis
 pub enum SnipError {
     Analysis(String),
+    General(String),
     UuidNotFound(String),
 }
 
@@ -13,6 +14,7 @@ impl fmt::Display for SnipError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             SnipError::Analysis(s) => write!(f, "Analysis encountered an error: {}", s),
+            SnipError::General(s) => write!(f, "{}", s),
             SnipError::UuidNotFound(s) => write!(f, "uuid {} was not found", s),
         }
     }
@@ -24,6 +26,13 @@ impl fmt::Debug for SnipError {
             SnipError::Analysis(s) => write!(
                 f,
                 "{{ SnipError::Analysis({}) file: {}, line: {} }}",
+                s,
+                file!(),
+                line!()
+            ),
+            SnipError::General(s) => write!(
+                f,
+                "{{ SnipError::General({}) file: {}, line: {} }}",
                 s,
                 file!(),
                 line!()

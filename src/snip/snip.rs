@@ -1,13 +1,14 @@
 use chrono::{DateTime, FixedOffset};
 use rusqlite::{Connection, DatabaseName};
 use rust_stemmers::Stemmer;
+use std::collections::HashMap;
 use std::error::Error;
 use std::io;
 use std::io::{ErrorKind, Read};
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 
-use crate::snip::{SnipAnalysis, SnipError, SnipWord, Attachment};
+use crate::snip::{SnipAnalysis, SnipError, SnipWord, WordIndex, Attachment};
 
 #[derive(Debug)]
 /// Snip is the main struct representing a document.
@@ -24,6 +25,80 @@ impl Snip {
         self.split_words()?;
         self.stem_words()?;
         self.scan_fragments()?;
+
+        Ok(())
+    }
+
+    /// Removes all word indices for a document
+    fn drop_word_indices(&self, conn: &Connection) -> Result<(), Box<dyn Error>> {
+        let mut stmt = conn.prepare("DELETE FROM snip_index_rs WHERE uuid = :uuid")?;
+        stmt.execute(&[(":uuid", &self.uuid.to_string())])?;
+        Ok(())
+    }
+
+    /// Returns the WordIndex of a given term within the document index
+    fn get_word_index(&self, conn: &Connection, term: &String) -> Result<WordIndex, Box<dyn Error>> {
+        let mut stmt = conn.prepare("SELECT count, positions FROM snip_index_rs WHERE uuid = :uuid AND term = :term")?;
+        let mut counter: usize = 0;
+        let rows = stmt.query_map(&[(":uuid", &self.uuid.to_string()), (":term", &term)], |row| {
+            let count: u64 = row.get(0)?;
+            let positions_string: String = row.get(1)?;
+            let positions: Vec<u64> = positions_string.split(',').map(|x| x.parse::<u64>().expect("error parsing u64 from string")).collect();
+            println!("counter: {}", counter);
+            counter += 1;
+
+            Ok(WordIndex {
+                count,
+                positions,
+                term: term.clone(),
+            })
+        })?;
+
+        for i in rows {
+            println!("{:?}", i);
+            return match i {
+                Ok(v) => Ok(v),
+                Err(e) => Err(Box::new(e)),
+            };
+        }
+        Err(Box::new(SnipError::UuidNotFound("word not found".to_string())))
+    }
+
+    /// writes an index to the database for searching
+    pub fn index(&mut self, conn: &Connection) -> Result<(), Box<dyn Error>> {
+        // ensure that item has been analyzed
+        if self.analysis.words.is_empty() {
+            self.analyze()?;
+        }
+
+        // build counts of each term
+        let mut terms: HashMap<String, u64> = HashMap::new();
+        for word in &self.analysis.words {
+            let count = terms.entry(word.stem.to_owned()).or_insert(1);
+            *count += 1;
+        }
+        // println!("{:#?}", terms);
+
+        // collect the positions of each term in the document
+        let mut terms_positions: HashMap<String, Vec<u64>> = HashMap::new();
+        for (pos, word) in self.analysis.words.iter().enumerate() {
+            let positions = terms_positions.entry(word.stem.clone()).or_insert(Vec::new());
+            positions.push(pos as u64);
+        }
+        // println!("{:#?}", terms_positions);
+
+        self.drop_word_indices(conn)?;
+        for pos in terms_positions {
+            // insert this data
+            // term: lorem count: 2 positions: "0,217"
+            // println!("term: {} count: {} positions: {:#?}", pos.0, pos.1.len(), pos_joined);
+            let index = WordIndex {
+                count: pos.1.len() as u64,
+                positions: pos.1,
+                term: pos.0,
+            };
+            self.write_word_index(conn, index)?;
+        }
 
         Ok(())
     }
@@ -133,6 +208,7 @@ impl Snip {
                 stem: String::new(),
                 prefix: None, // these are scanned later
                 suffix: None, // these are scanned later
+                index: None, // this is built later
             };
             self.analysis.words.push(word_analyzed);
         }
@@ -147,6 +223,24 @@ impl Snip {
             let word_tmp = word_analyzed.word.to_lowercase().clone();
             let stem = stemmer.stem(word_tmp.as_str());
             word_analyzed.stem = stem.to_string();
+        }
+        Ok(())
+    }
+
+    /// Writes an index for a word to the database for searching
+    fn write_word_index(&mut self, conn: &Connection, word: WordIndex) -> Result<(), Box<dyn Error>> {
+        let mut stmt = conn.prepare("INSERT OR REPLACE INTO snip_index_rs(term, uuid, count, positions) VALUES (:term, :uuid, :count, :positions)")?;
+        let positions_string = word.positions_to_string();
+        let count = word.count;
+        let result = stmt.execute(&[
+            (":term", &word.term),
+            (":uuid", &self.uuid.to_string()),
+            (":count", &count.to_string()),
+            (":positions", &positions_string),
+        ])?;
+
+        if result != 1 {
+            return Err(Box::new(SnipError::General("no rows were updated".to_string())))
         }
         Ok(())
     }
@@ -195,6 +289,9 @@ pub fn create_snip_tables(conn: &Connection) -> Result<(), Box<dyn Error>> {
     stmt.raw_execute()?;
 
     let mut stmt = conn.prepare("CREATE TABLE IF NOT EXISTS snip_index(term TEXT, uuid TEXT, count INTEGER, positions TEXT)")?;
+    stmt.raw_execute()?;
+
+    let mut stmt = conn.prepare("CREATE TABLE IF NOT EXISTS snip_index_rs(term TEXT, uuid TEXT, count INTEGER, positions TEXT)")?;
     stmt.raw_execute()?;
 
     Ok(())
@@ -298,15 +395,8 @@ pub fn index_all_items(conn: &Connection) -> Result<(), Box<dyn Error>> {
             Ok(_) => (),
             Err(e) => return Err(Box::new(e)),
         }
-        index_item(conn, &s)?;
+        s.index(conn)?;
     }
-
-    // perform analysis
-    // write to database index
-    Ok(())
-}
-
-pub fn index_item(_conn: &Connection, _s: &Snip) -> Result<(), SnipError> {
     Ok(())
 }
 
@@ -467,7 +557,6 @@ pub fn split_uuid(uuid: Uuid) -> Vec<String> {
     uuid.to_string().split('-').map(|s| s.to_string()).collect()
 }
 
-#[allow(dead_code)]
 pub fn strip_punctuation(s: &str) -> &str {
     let chars_strip = &['.', ',', '!', '?', '"', '\'', '[', ']', '(', ')'];
 
@@ -583,6 +672,43 @@ mod tests {
         let id = Uuid::try_parse(ID_STR).expect("parsing uuid from static string");
 
         let _s = get_from_uuid(&conn, id)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_index_snip() -> Result<(), Box<dyn Error>> {
+        let conn = prepare_database().expect("preparing in-memory database");
+        let id = Uuid::try_parse(ID_STR)?;
+        let mut s = get_from_uuid(&conn, id)?;
+
+        s.index(&conn)?;
+        // check data
+        let mut stmt = conn.prepare("SELECT term, count, positions from snip_index_rs WHERE uuid = :uuid AND term = 'lorem'")?;
+        let rows = stmt.query_and_then(&[(":uuid", &id.to_string())], |row| -> Result<WordIndex, Box<dyn Error>> {
+            let term: String = row.get(0)?;
+            let count: u64 = row.get(1)?;
+            let positions_str: String = row.get(2)?;
+            let positions = WordIndex::positions_to_u64(positions_str)?;
+            let s = WordIndex {
+                term,
+                count,
+                positions,
+            };
+            Ok(s)
+        })?;
+
+        for data in rows {
+            let d = data.unwrap();
+            if d.count != 2 {
+                return Err(Box::new(SnipError::General(format!("expected count {}, got {}", 2, d.count).to_string())));
+            }
+            let positions_expect: Vec<u64> = vec![0, 217];
+            if d.positions != positions_expect {
+                return Err(Box::new(SnipError::General(format!("expected positions {:?}, got {:?}", positions_expect, d.positions).to_string())));
+            }
+            // println!("test_index_snip -> term: {} count: {} positions: {:?}", d.term, d.count, d.positions);
+        }
+
         Ok(())
     }
 
