@@ -7,7 +7,7 @@ use std::io::{ErrorKind, Read};
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 
-use crate::snip::{SnipAnalysis, SnipError, SnipWord};
+use crate::snip::{SnipAnalysis, SnipError, SnipWord, Attachment};
 
 #[derive(Debug)]
 /// Snip is the main struct representing a document.
