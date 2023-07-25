@@ -2,11 +2,12 @@ use chrono::{DateTime, FixedOffset};
 use rusqlite::{Connection, DatabaseName};
 use rust_stemmers::Stemmer;
 use std::error::Error;
-use std::fmt;
 use std::io;
 use std::io::{ErrorKind, Read};
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
+
+use crate::snip::{SnipAnalysis, SnipError, SnipWord};
 
 #[derive(Debug)]
 /// Snip is the main struct representing a document.
@@ -16,21 +17,6 @@ pub struct Snip {
     pub text: String,
     pub timestamp: DateTime<FixedOffset>,
     pub analysis: SnipAnalysis,
-}
-
-/// Analysis of the document derived from
-#[derive(Debug)]
-pub struct SnipAnalysis {
-    pub words: Vec<SnipWord>,
-}
-
-/// Represents a word in the document, along with meta information derived from document analysis
-#[derive(Debug)]
-pub struct SnipWord {
-    pub word: String,
-    pub stem: String,
-    pub prefix: Option<String>,
-    pub suffix: Option<String>,
 }
 
 impl Snip {
@@ -164,16 +150,6 @@ impl Snip {
         }
         Ok(())
     }
-}
-
-/// Attachment represents binary data attached to a document
-pub struct Attachment {
-    pub uuid: Uuid,
-    pub snip_uuid: Uuid,
-    pub timestamp: DateTime<FixedOffset>,
-    pub name: String,
-    pub data: Vec<u8>,
-    pub size: usize,
 }
 
 /// Returns an Attachment struct parsed from the database
@@ -504,44 +480,6 @@ pub fn strip_punctuation(s: &str) -> &str {
         None => clean,
     };
     clean
-}
-
-/// Errors for Snip Analysis
-pub enum SnipError {
-    Analysis(String),
-    UuidNotFound(String),
-}
-
-impl Error for SnipError {}
-
-impl fmt::Display for SnipError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            SnipError::Analysis(s) => write!(f, "Analysis encountered an error: {}", s),
-            SnipError::UuidNotFound(s) => write!(f, "uuid {} was not found", s),
-        }
-    }
-}
-
-impl fmt::Debug for SnipError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            SnipError::Analysis(s) => write!(
-                f,
-                "{{ SnipError::Analysis({}) file: {}, line: {} }}",
-                s,
-                file!(),
-                line!()
-            ),
-            SnipError::UuidNotFound(s) => write!(
-                f,
-                "{{ SnipError::UuidNotFound({}) file: {}, line: {} }}",
-                s,
-                file!(),
-                line!()
-            ),
-        }
-    }
 }
 
 #[cfg(test)]
