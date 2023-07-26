@@ -40,7 +40,7 @@ impl Snip {
     fn _get_word_index(&self, conn: &Connection, term: &String) -> Result<WordIndex, Box<dyn Error>> {
         let mut stmt = conn.prepare("SELECT count, positions FROM snip_index_rs WHERE uuid = :uuid AND term = :term")?;
         let mut counter: usize = 0;
-        let rows = stmt.query_map(&[(":uuid", &self.uuid.to_string()), (":term", &term)], |row| {
+        let mut rows = stmt.query_map(&[(":uuid", &self.uuid.to_string()), (":term", term)], |row| {
             let count: u64 = row.get(0)?;
             let positions_string: String = row.get(1)?;
             let positions: Vec<u64> = positions_string.split(',').map(|x| x.parse::<u64>().expect("error parsing u64 from string")).collect();
@@ -54,12 +54,11 @@ impl Snip {
             })
         })?;
 
-        for i in rows {
-            println!("{:?}", i);
+        if let Some(i) = rows.next() {
             return match i {
                 Ok(v) => Ok(v),
                 Err(e) => Err(Box::new(e)),
-            };
+            }
         }
         Err(Box::new(SnipError::UuidNotFound("word not found".to_string())))
     }
@@ -466,106 +465,6 @@ pub fn remove_snip(conn: &Connection, id: Uuid) -> Result<(), Box<dyn Error>> {
     }
 }
 
-/// Returns ids of documents that match the given term
-pub fn search_data(conn: &Connection, term: &String) -> Result<Vec<Uuid>, Box<dyn Error>> {
-    let mut stmt = conn.prepare("SELECT uuid FROM snip WHERE data LIKE :term")?;
-    let term_fuzzy = format!("{} {}{}", "%", term, "%");
-
-    let query_iter = stmt.query_map(&[(":term", &term_fuzzy)], |row| {
-        let id_str: String = row.get(0)?;
-        Ok(id_str)
-    })?;
-
-    let mut results: Vec<Uuid> = Vec::new();
-    for i in query_iter {
-        let id_str = match i {
-            Ok(v) => v,
-            Err(e) => return Err(Box::new(e)),
-        };
-        match Uuid::parse_str(&id_str) {
-            Ok(v) => results.push(v),
-            Err(e) => return Err(Box::new(e)),
-        }
-    }
-    // println!("results: {:?}", results);
-    Ok(results)
-}
-
-pub fn search_index_term(conn: &Connection, term: &String) -> Result<Vec<Uuid>, Box<dyn Error>> {
-    let mut results: Vec<Uuid> = Vec::new();
-    let mut stmt = conn.prepare("SELECT uuid FROM snip_index_rs WHERE term = :term")?;
-    let rows = stmt.query_and_then(&[(":term", &term)], |row| -> Result<String, Box<dyn Error>> {
-        let id: String = row.get(0)?;
-        Ok(id)
-    })?;
-
-    for row in rows {
-        if let Ok(id_str) = row {
-            let id: Uuid = Uuid::try_parse(id_str.as_str())?;
-            results.push(id);
-        }
-    }
-    /*
-    let query_iter = stmt.query_map(&[(":term", &term)], |row| -> Result<Uuid, Box<dyn Error>> {
-        let id = row.get(0)?;
-        Ok(id)
-    })?;
-
-    for id in query_iter {
-        results.push(id.unwrap());
-    }
-     */
-    Ok(results)
-}
-
-/// Searches the database index returning UUIDs that match supplied terms
-pub fn search_index_terms(conn: &Connection, terms: Vec<String>) -> Result<HashMap<String, Vec<Uuid>>, Box<dyn Error>> {
-    let mut results: HashMap<String, Vec<Uuid>> = HashMap::new();
-
-    // search each term
-    for term in terms {
-        let result_single = search_index_term(conn, &term)?;
-        results.insert(term, result_single);
-    }
-    Ok(results)
-}
-
-/// Search for a uuid matching the supplied partial string.
-/// The partial uuid must match a unique record to return the result.
-pub fn search_uuid(conn: &Connection, id_partial: &str) -> Result<Uuid, Box<dyn Error>> {
-    let mut stmt = conn.prepare("SELECT uuid from snip WHERE uuid LIKE :id LIMIT 2")?;
-    let id_partial_fuzzy = format!("{}{}{}", "%", id_partial, "%");
-
-    let query_iter = stmt.query_map(&[(":id", &id_partial_fuzzy)], |row| {
-        let id_str = row.get(0)?;
-        Ok(id_str)
-    })?;
-
-    // return only if a singular result is matched
-    let mut id_found = "".to_string();
-    let mut first_run = true;
-    let err_not_found = Box::new(io::Error::new(
-        ErrorKind::NotFound,
-        "could not find unique uuid match",
-    ));
-    for id in query_iter {
-        if first_run {
-            first_run = false;
-            id_found = id.unwrap();
-        } else {
-            return Err(err_not_found);
-        }
-    }
-
-    if !id_found.is_empty() {
-        return match Uuid::parse_str(&id_found) {
-            Ok(v) => Ok(v),
-            Err(e) => Err(Box::new(e)),
-        };
-    }
-    Err(err_not_found)
-}
-
 /// Returns a Snip struct parsed from the database
 fn snip_from_db(
     id: String,
@@ -613,84 +512,7 @@ pub fn strip_punctuation(s: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusqlite::DatabaseName;
-    use std::collections::HashMap;
-
-    const ID_STR: &str = "ba652e2d-b248-4bcc-b36e-c26c0d0e8002";
-    const ID_ATTACH_STR: &str = "9cfc5a2d-2946-48ee-82e0-227ba4bcdbd5";
-
-    // This prepares an in-memory database for testing. This avoids database file name collisions
-    // and allows each unit test to use congruent data yet be completely isolated. This function
-    // panics to keep test function calls brief, and they cannot proceed unless it succeeds.
-    fn prepare_database() -> Result<Connection, ()> {
-        let conn = match Connection::open_in_memory() {
-            Ok(v) => v,
-            Err(e) => panic!("{}", e),
-        };
-        // import data
-        create_snip_tables(&conn).expect("creating database tables");
-        import_snip_data(&conn).expect("importing test data");
-
-        Ok(conn)
-    }
-
-    fn import_snip_data(conn: &Connection) -> Result<(), Box<dyn Error>> {
-        let snip_file = "test_data/snip.csv";
-        let snip_attachment_file = "test_data/snip_attachment.csv";
-
-        let mut data = csv::Reader::from_path(snip_file)?;
-        for r in data.records() {
-            let record = r?;
-
-            // gather record data
-            let id = record.get(0).expect("getting uuid field");
-            let timestamp = record.get(1).expect("getting timestamp field");
-            let name = record.get(2).expect("getting name field");
-            let data = record.get(3).expect("getting data field");
-
-            // insert the record
-            let mut stmt = conn.prepare("INSERT INTO snip(uuid, timestamp, name, data) VALUES (:id, :timestamp, :name, :data)")?;
-            stmt.execute(&[
-                (":id", id),
-                (":timestamp", timestamp),
-                (":name", name),
-                (":data", data),
-            ])?;
-        }
-
-        data = csv::Reader::from_path(snip_attachment_file)?;
-        for r in data.records() {
-            let record = r?;
-
-            let id = record.get(0).expect("getting attachment uuid field");
-            let snip_id = record.get(1).expect("getting uuid field");
-            let timestamp = record.get(2).expect("getting timestamp field");
-            let name = record.get(3).expect("getting name field");
-            let size = record.get(4).expect("getting size field");
-
-            // use name to read data from test file
-            let data = std::fs::read(format!("{}/{}", "test_data/attachments/", name))?;
-            let data = data.as_slice();
-
-            let mut stmt = conn.prepare("INSERT INTO snip_attachment(uuid, snip_uuid, timestamp, name, data, size) VALUES (:id, :snip_id, :timestamp, :name, ZEROBLOB(:blob_size), :size)")?;
-            stmt.execute(&[
-                (":id", id),
-                (":snip_id", snip_id),
-                (":timestamp", timestamp),
-                (":name", name),
-                (":blob_size", data.len().to_string().as_str()),
-                (":size", size),
-            ])?;
-            let row_id = conn.last_insert_rowid();
-
-            // add binary data to blob
-            let mut blob =
-                conn.blob_open(DatabaseName::Main, "snip_attachment", "data", row_id, false)?;
-            blob.write_at(data, 0)?;
-        }
-
-        Ok(())
-    }
+    use crate::snip::test_prep::*;
 
     #[test]
     fn test_get_attachment_from_uuid() -> Result<(), Box<dyn Error>> {
@@ -796,45 +618,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_search_uuid() -> Result<(), Box<dyn Error>> {
-        let conn = prepare_database().expect("preparing in-memory database");
-
-        let partials: HashMap<String, String> = HashMap::from([
-            // ba652e2d-b248-4bcc-b36e-c26c0d0e8002
-            (ID_STR[0..8].to_string(), "segment 1".to_string()), // ba652e2d
-            (ID_STR[9..13].to_string(), "segment 2".to_string()), // _________b248
-            (ID_STR[14..18].to_string(), "segment 3".to_string()), // ______________4bbc
-            (ID_STR[19..23].to_string(), "segment 4".to_string()), // ___________________b36e
-            (ID_STR[24..].to_string(), "segment 5".to_string()), // ________________________c26c0d0e8002
-            (ID_STR[7..12].to_string(), "partial 1".to_string()), // _______d-b24
-            (ID_STR[7..14].to_string(), "partial 2".to_string()), // _______d-b248-
-            (ID_STR[7..15].to_string(), "partial 3".to_string()), // _______d-b248-4
-            (ID_STR[8..19].to_string(), "partial 4".to_string()), // ________-b248-4bcc-
-            (ID_STR[23..].to_string(), "partial 5".to_string()), // _______________________-c26c0d0e8002
-        ]);
-
-        /*
-        println!("ba652e2d-b248-4bcc-b36e-c26c0d0e8002");
-        for p in &partials {
-            println!("{} {}", p.0, p.1);
-        }
-        */
-
-        let expect = match Uuid::parse_str(ID_STR) {
-            Ok(v) => v,
-            Err(e) => panic!("{}", e),
-        };
-
-        // test all uuid string partials
-        for p in &partials {
-            println!("search uuid string: {}", p.0);
-            let id = search_uuid(&conn, p.0);
-            match id {
-                Ok(v) => assert_eq!(expect, v),
-                Err(e) => panic!("{}, full: {}, partial: {}", e, ID_STR, &p.0),
-            }
-        }
-        Ok(())
-    }
 }
