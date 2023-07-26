@@ -275,11 +275,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         if let Some(args) = sub_matches.get_many::<String>("terms") {
             let terms: Vec<String> = args.map(|x| x.to_owned()).collect();
             let terms_stem = stem_vec(terms.clone());
-            println!("terms: {:?}", terms_stem);
+            println!("terms: {:?}", terms);
+            println!("stems: {:?}", terms_stem);
+            // search for all terms
+            let results = snip::search_index_terms(&conn, terms_stem)?;
+            println!("results: {:#?}", results);
+
+            /*
+            // single term direct data search
             for (i, term) in terms_stem.iter().enumerate() {
                 let results = snip::search_data(&conn, term)?;
                 println!("results ({}): {:?}", terms[i], results);
             }
+             */
         }
     }
 

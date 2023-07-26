@@ -37,7 +37,7 @@ impl Snip {
     }
 
     /// Returns the WordIndex of a given term within the document index
-    fn get_word_index(&self, conn: &Connection, term: &String) -> Result<WordIndex, Box<dyn Error>> {
+    fn _get_word_index(&self, conn: &Connection, term: &String) -> Result<WordIndex, Box<dyn Error>> {
         let mut stmt = conn.prepare("SELECT count, positions FROM snip_index_rs WHERE uuid = :uuid AND term = :term")?;
         let mut counter: usize = 0;
         let rows = stmt.query_map(&[(":uuid", &self.uuid.to_string()), (":term", &term)], |row| {
@@ -488,6 +488,45 @@ pub fn search_data(conn: &Connection, term: &String) -> Result<Vec<Uuid>, Box<dy
         }
     }
     // println!("results: {:?}", results);
+    Ok(results)
+}
+
+pub fn search_index_term(conn: &Connection, term: &String) -> Result<Vec<Uuid>, Box<dyn Error>> {
+    let mut results: Vec<Uuid> = Vec::new();
+    let mut stmt = conn.prepare("SELECT uuid FROM snip_index_rs WHERE term = :term")?;
+    let rows = stmt.query_and_then(&[(":term", &term)], |row| -> Result<String, Box<dyn Error>> {
+        let id: String = row.get(0)?;
+        Ok(id)
+    })?;
+
+    for row in rows {
+        if let Ok(id_str) = row {
+            let id: Uuid = Uuid::try_parse(id_str.as_str())?;
+            results.push(id);
+        }
+    }
+    /*
+    let query_iter = stmt.query_map(&[(":term", &term)], |row| -> Result<Uuid, Box<dyn Error>> {
+        let id = row.get(0)?;
+        Ok(id)
+    })?;
+
+    for id in query_iter {
+        results.push(id.unwrap());
+    }
+     */
+    Ok(results)
+}
+
+/// Searches the database index returning UUIDs that match supplied terms
+pub fn search_index_terms(conn: &Connection, terms: Vec<String>) -> Result<HashMap<String, Vec<Uuid>>, Box<dyn Error>> {
+    let mut results: HashMap<String, Vec<Uuid>> = HashMap::new();
+
+    // search each term
+    for term in terms {
+        let result_single = search_index_term(conn, &term)?;
+        results.insert(term, result_single);
+    }
     Ok(results)
 }
 
