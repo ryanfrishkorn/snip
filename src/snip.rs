@@ -1,11 +1,11 @@
-mod snip;
+mod doc;
 mod analysis;
 mod attachment;
 mod error;
 mod test_prep;
 
-pub use snip::*;
-pub use snip::Snip;
+pub use doc::*;
+pub use doc::Snip;
 pub use analysis::*;
 pub use analysis::{SnipAnalysis, SnipWord, WordIndex};
 pub use attachment::Attachment;
