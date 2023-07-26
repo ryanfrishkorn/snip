@@ -239,11 +239,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    // HELP
-    if let Some(("help", _)) = matches.subcommand() {
-        println!("help");
-    }
-
     // LS
     if let Some(("ls", _)) = matches.subcommand() {
         // honor arguments if present
