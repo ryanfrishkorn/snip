@@ -9,6 +9,7 @@ use std::error::Error;
 use std::io::Read;
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
+use crate::snip::get_from_uuid;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let cmd = Command::new("snip-rs")
@@ -270,11 +271,49 @@ fn main() -> Result<(), Box<dyn Error>> {
         if let Some(args) = sub_matches.get_many::<String>("terms") {
             let terms: Vec<String> = args.map(|x| x.to_owned()).collect();
             let terms_stem = stem_vec(terms.clone());
-            println!("terms: {:?}", terms);
-            println!("stems: {:?}", terms_stem);
-            // search for all terms
-            let results = snip::search_index_terms(&conn, terms_stem)?;
-            println!("results: {:#?}", results);
+            // TODO remove duplicate search terms if supplied
+
+            // search for all terms and print
+            let results = snip::search_index_terms(&conn, &terms_stem)?;
+            for term in terms_stem.iter() {
+                let (id, positions) = results.get(term.as_str()).ok_or("error parsing results from hashmap")?;
+                // println!("uuid: {} positions: {:?}", id, positions);
+
+                // retrieve and analyze document to obtain context
+                let mut s = get_from_uuid(&conn, *id)?;
+                s.analyze()?;
+                // let context = s.analysis.get_term_context_words(positions.to_owned());
+                println!("{}", s.name);
+                println!("  {} [{}: {}]", snip::split_uuid(s.uuid)[0], term, positions.len());
+
+                for pos in positions {
+                    // gather context indices and print them
+                    let context = s.analysis.get_term_context_positions(*pos, 8);
+                    // print!("    [0-0] \"");
+                    let position_first = context.first().ok_or("finding first context position")?;
+                    let position_last = context.last().ok_or("finding last context position")?;
+                    print!("    [{}-{}] \"", position_first, position_last);
+                    for (i, p) in context.iter().enumerate() {
+                        let snip_word = &s.analysis.words[*p];
+                        // check for matching word
+                        match &snip_word.stem {
+                            x if x.to_lowercase() == *term => print!("[{}]", snip_word.word),
+                            _ => print!("{}", snip_word.word),
+                        }
+                        // print!("{}", snip_word.word);
+                        // if let Some(suffix) = &s.analysis.words[idx].suffix {
+                        if let Some(suffix) = &snip_word.suffix {
+                            if i == context.len() - 1 { // do not print the final suffix
+                                break;
+                            }
+                            // TODO remove repetitive whitespace to conform formatted text to search results
+                            print!("{}", suffix.replace('\n', " ")); // no newlines
+                        }
+                    }
+                    println!("\"");
+                }
+                println!();
+            }
 
             /*
             // single term direct data search

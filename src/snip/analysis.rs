@@ -4,11 +4,63 @@ use std::collections::HashMap;
 use std::error::Error;
 use rusqlite::Connection;
 use uuid::Uuid;
+use crate::snip::SnipError;
 
 /// Analysis of the document derived from
 #[derive(Debug)]
 pub struct SnipAnalysis {
     pub words: Vec<SnipWord>,
+}
+
+impl SnipAnalysis {
+    /// get vector positions of desired context including term position
+    pub fn get_term_context_positions(&self, position: usize, count: usize) -> Vec<usize> {
+        let mut context: Vec<usize> = Vec::new();
+        let mut context_prefix: Vec<usize> = Vec::new();
+        let mut context_suffix: Vec<usize> = Vec::new();
+        // println!("term: \"{}\" position: {}", &self.words[position].word, position);
+
+        // check bounds of context start
+        let context_prefix_pos: usize = match position as i64 - count as i64 {
+            x if x <= 0 => 0, // use position zero
+            x => x as usize,
+        };
+        // println!("context_prefix_pos: {}", context_prefix_pos);
+
+        // check bounds of context stop
+        let context_suffix_pos: usize = match position + 1 {
+            x if x > self.words.len() => self.words.len(),
+            x => x,
+        };
+        // println!("context_suffix_pos: {}", context_suffix_pos);
+
+        for (i, _) in self.words.iter().enumerate() {
+            if i >= context_prefix_pos && i < position {
+                context_prefix.push(i);
+            }
+            if i > position && i < context_suffix_pos + count {
+                context_suffix.push(i);
+            }
+        }
+        // println!("prefix: {:?}", context_prefix);
+        context.append(&mut context_prefix);
+        context.push(position);
+        // println!("suffix: {:?}", context_suffix);
+        context.append(&mut context_suffix);
+        context
+    }
+
+    /// get document words corresponding to the given context positions
+    pub fn get_term_context_words(&self, context: Vec<usize>) -> Vec<&SnipWord> {
+        let mut words: Vec<String> = Vec::new();
+        let mut snip_words: Vec<&SnipWord> = Vec::new();
+
+        for pos in context {
+            words.push(self.words[pos].word.clone());
+            snip_words.push(&self.words[pos]);
+        }
+        snip_words
+    }
 }
 
 /// Represents a word in the document, along with meta information derived from document analysis
@@ -70,30 +122,35 @@ pub fn search_data(conn: &Connection, term: &String) -> Result<Vec<Uuid>, Box<dy
     Ok(results)
 }
 
-pub fn search_index_term(conn: &Connection, term: &String) -> Result<Vec<Uuid>, Box<dyn Error>> {
-    let mut results: Vec<Uuid> = Vec::new();
-    let mut stmt = conn.prepare("SELECT uuid FROM snip_index_rs WHERE term = :term")?;
-    let rows = stmt.query_and_then(&[(":term", &term)], |row| -> Result<String, Box<dyn Error>> {
+pub fn search_index_term(conn: &Connection, term: &String) -> Result<(Uuid, Vec<usize>), Box<dyn Error>> {
+    let results: (Uuid, Vec<usize>);
+    let mut stmt = conn.prepare("SELECT uuid, positions FROM snip_index_rs WHERE term = :term")?;
+    let rows = stmt.query_and_then(&[(":term", &term)], |row| -> Result<(String, String), Box<dyn Error>> {
         let id: String = row.get(0)?;
-        Ok(id)
+        let positions: String = row.get(1)?;
+        Ok((id, positions))
     })?;
 
-    for id_str in rows.flatten() {
-        let id: Uuid = Uuid::try_parse(id_str.as_str())?;
-        results.push(id);
+    if let Some(row) = rows.into_iter().flatten().next() {
+        // parse uuid, split positions string and create vector
+        let id: Uuid = Uuid::try_parse(row.0.as_str())?;
+        let positions_split: Vec<usize> = row.1.split(',').map(|x| x.parse::<usize>().expect("converting position string to usize")).collect();
+        results = (id, positions_split);
+        return Ok(results);
     }
-    Ok(results)
+
+    Err(Box::new(SnipError::General("no matches found in index".to_string())))
 }
 
 
 /// Searches the database index returning UUIDs that match supplied terms
-pub fn search_index_terms(conn: &Connection, terms: Vec<String>) -> Result<HashMap<String, Vec<Uuid>>, Box<dyn Error>> {
-    let mut results: HashMap<String, Vec<Uuid>> = HashMap::new();
+pub fn search_index_terms(conn: &Connection, terms: &Vec<String>) -> Result<HashMap<String, (Uuid, Vec<usize>)>, Box<dyn Error>> {
+    let mut results: HashMap<String, (Uuid, Vec<usize>)> = HashMap::new();
 
     // search each term
     for term in terms {
-        let result_single = search_index_term(conn, &term)?;
-        results.insert(term, result_single);
+        let result_single = search_index_term(conn, term)?;
+        results.insert(term.clone(), result_single);
     }
     Ok(results)
 }
@@ -140,7 +197,40 @@ mod tests {
     use std::collections::HashMap;
     use std::error::Error;
     use uuid::Uuid;
+    use crate::snip;
     use crate::snip::test_prep::*;
+
+    #[test]
+    fn test_get_term_context() -> Result<(), Box<dyn Error>> {
+        let conn = prepare_database().expect("preparing in-memory database");
+        let id = Uuid::try_parse(ID_STR)?;
+        let mut s = snip::get_from_uuid(&conn, id)?;
+        s.analyze()?;
+        // println!("{}", s.text);
+
+        let position = 3;
+        let term = &s.analysis.words[position].word;
+        let expect: Vec<usize> = vec![0, 1, 2, 3, 4, 5, 6];
+        let context = s.analysis.get_term_context_positions(position, 3);
+        println!("context: {:?}", context);
+        assert_eq!(expect, context);
+
+        // print context
+        let context_full: Vec<&SnipWord> = s.analysis.get_term_context_words(context);
+        for c in context_full.iter() {
+            // print first word
+            if c.word == *term {
+                print!("[{}]", c.word);
+            } else {
+                print!("{}", c.word);
+            }
+            if let Some(suffix) = &c.suffix {
+                print!("{}", suffix);
+            }
+        }
+
+        Ok(())
+    }
 
     #[test]
     fn test_search_uuid() -> Result<(), Box<dyn Error>> {
