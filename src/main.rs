@@ -113,13 +113,18 @@ fn main() -> Result<(), Box<dyn Error>> {
             Command::new("split")
                 .about("Split stdin into words")
                 .arg_required_else_help(false)
-                .arg(Arg::new("string")),
+                .arg(Arg::new("string"))
+        )
+        .subcommand(
+            Command::new("stats")
+                .about("Show stats about the document index")
+                .arg_required_else_help(false)
         )
         .subcommand(
             Command::new("stem")
                 .about("Stem word from stdin")
                 .arg_required_else_help(false)
-                .arg(Arg::new("words")),
+                .arg(Arg::new("words"))
         );
 
     let matches = cmd.get_matches();
@@ -240,6 +245,33 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
+    // INDEX
+    if let Some(("index", _)) = matches.subcommand() {
+        snip::create_index_table(&conn)?;
+
+        let ids = snip::uuid_list(&conn)?;
+        let mut status_len: usize;
+        eprint!("indexing...");
+        for (i, id) in ids.iter().enumerate() {
+            let mut s = snip::get_from_uuid(&conn, id)?;
+
+            // display status
+            let status = format!("[{}/{}] {}", i + 1, &ids.len(), s.name);
+            status_len = status.chars().collect::<Vec<char>>().len();
+            eprint!("{}", status);
+
+            // analyze and index document
+            s.analyze()?;
+            s.index(&conn)?;
+
+            // clear output - rewind, overwrite w/space, rewind
+            for _ in 0..status_len {
+                eprint!("{} {}", 8u8 as char, 8u8 as char);
+            }
+        }
+        eprintln!("success");
+    }
+
     // LS
     if let Some(("ls", _)) = matches.subcommand() {
         // honor arguments if present
@@ -332,6 +364,33 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
+    // SPLIT
+    if let Some(("split", sub_matches)) = matches.subcommand() {
+        let input = match sub_matches.get_one::<String>("string") {
+            Some(v) => v.to_owned(),
+            None => snip::read_lines_from_stdin()?,
+        };
+        let words = input.unicode_words();
+        println!("{:?}", words.collect::<Vec<&str>>());
+    }
+
+    // STATS
+    if let Some(("stats", _)) = matches.subcommand() {
+        let terms_to_display = 20;
+        let stats = snip::stats_index(&conn)?;
+        println!("Terms:");
+        println!("  indexed: {}", stats.terms_total);
+        println!("  distinct: {}", stats.terms_unique);
+        println!("  frequent (top {}):", terms_to_display);
+        for (i, (term, count)) in stats.terms_with_counts.iter().enumerate() {
+            let percentage: f32 = (*count as f32 / stats.terms_total as f32) * 100.0;
+            println!("    {:<6} ({:.2}%) {}", count, percentage, term);
+            if i >= terms_to_display {
+                break;
+            }
+        }
+    }
+
     // STEM
     if let Some(("stem", sub_matches)) = matches.subcommand() {
         let input = match sub_matches.get_one::<String>("words") {
@@ -345,43 +404,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             stems.push(stemmer.stem(w.to_lowercase().as_str()).to_string());
         }
         println!("{:?}", stems);
-    }
-
-    // SPLIT
-    if let Some(("split", sub_matches)) = matches.subcommand() {
-        let input = match sub_matches.get_one::<String>("string") {
-            Some(v) => v.to_owned(),
-            None => snip::read_lines_from_stdin()?,
-        };
-        let words = input.unicode_words();
-        println!("{:?}", words.collect::<Vec<&str>>());
-    }
-
-    // INDEX
-    if let Some(("index", _)) = matches.subcommand() {
-        snip::create_index_table(&conn)?;
-
-        let ids = snip::uuid_list(&conn)?;
-        let mut status_len: usize;
-        eprint!("indexing...");
-        for (i, id) in ids.iter().enumerate() {
-            let mut s = snip::get_from_uuid(&conn, id)?;
-
-            // display status
-            let status = format!("[{}/{}] {}", i + 1, &ids.len(), s.name);
-            status_len = status.chars().collect::<Vec<char>>().len();
-            eprint!("{}", status);
-
-            // analyze and index document
-            s.analyze()?;
-            s.index(&conn)?;
-
-            // clear output - rewind, overwrite w/space, rewind
-            for _ in 0..status_len {
-                eprint!("{} {}", 8u8 as char, 8u8 as char);
-            }
-        }
-        eprintln!("success");
     }
 
     Ok(())

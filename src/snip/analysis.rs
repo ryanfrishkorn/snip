@@ -12,6 +12,13 @@ pub struct SnipAnalysis {
     pub words: Vec<SnipWord>,
 }
 
+#[derive(Debug)]
+pub struct AnalysisStats {
+    pub terms_total: u64,
+    pub terms_unique: u64,
+    pub terms_with_counts: Vec<(String, u64)>,
+}
+
 impl SnipAnalysis {
     /// get vector positions of desired context including term position
     pub fn get_term_context_positions(&self, position: usize, count: usize) -> Vec<usize> {
@@ -61,6 +68,51 @@ impl SnipAnalysis {
         }
         snip_words
     }
+}
+
+/// provide stats about the document and index
+pub fn stats_index(conn: &Connection) -> Result<AnalysisStats, Box<dyn Error>> {
+    let mut stats = AnalysisStats {
+        terms_with_counts: Vec::new(),
+        terms_total: 0,
+        terms_unique: 0,
+    };
+
+    // gather terms information
+    let mut stmt = conn.prepare("SELECT SUM(count) FROM snip_index_rs")?;
+    let row = stmt.query_and_then([], |row| -> Result<usize, rusqlite::Error>{
+        let total = row.get(0)?;
+        Ok(total)
+    })?;
+
+    if let Some(total) = row.flatten().next() {
+        stats.terms_total = total as u64;
+    }
+
+    // terms and their popularity across all
+    let mut stmt = conn.prepare("SELECT term, SUM(count) FROM snip_index_rs GROUP BY term ORDER BY SUM(count) DESC")?;
+    let query_iter = stmt.query_and_then([], |row| -> Result<(String, u64), Box<dyn Error>> {
+        let term: String = row.get(0)?;
+        let count: usize = row.get(1)?;
+        Ok((term, count as u64))
+    })?;
+
+    for row in query_iter.flatten() {
+        stats.terms_with_counts.push(row);
+    }
+
+    // unique terms from index
+    let mut stmt = conn.prepare("SELECT count(DISTINCT(term)) FROM snip_index_rs")?;
+    let query_iter = stmt.query_and_then([], |row| -> Result<usize, Box<dyn Error>> {
+        let total: usize = row.get(0)?;
+        Ok(total)
+    })?;
+
+    if let Some(total_unique) = query_iter.flatten().next() {
+        stats.terms_unique = total_unique as u64;
+    }
+
+    Ok(stats)
 }
 
 /// Represents a word in the document, along with meta information derived from document analysis
@@ -291,6 +343,18 @@ mod tests {
                 Err(e) => panic!("{}, full: {}, partial: {}", e, ID_STR, &p.0),
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_stats_index() -> Result<(), Box<dyn Error>> {
+        let conn = prepare_database().expect("preparing in-memory database");
+        snip::index_all_items(&conn)?;
+
+        let stats = stats_index(&conn)?;
+        println!("terms_total: {}", stats.terms_total);
+        println!("terms_unique: {}", stats.terms_unique);
+
         Ok(())
     }
 }
