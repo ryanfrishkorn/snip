@@ -10,6 +10,7 @@ test = false
 [dependencies]
 chrono = "0.4.26"
 clap = { version = "4.3.10", features = ["unstable-doc"] }
+colored = "2.0.4"
 csv = "1.2.2"
 regex = "1.8.4"
 rusqlite = { version = "0.29.0", features = ["blob"] }
