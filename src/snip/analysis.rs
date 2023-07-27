@@ -133,7 +133,6 @@ pub fn search_index_term(conn: &Connection, term: &String) -> Result<Vec<(Uuid, 
         Ok((id, positions))
     })?;
 
-    // if let Some(row) = rows.into_iter().flatten().next() {
     for row in rows.flatten() {
         // parse uuid, split positions string and create vector
         let id: Uuid = Uuid::try_parse(row.0.as_str())?;
