@@ -304,7 +304,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             let snip_word = &s.analysis.words[*p];
                             // check for matching word
                             match &snip_word.stem {
-                                x if x.to_lowercase() == *term => print!("[{}]", snip_word.word.red()),
+                                x if x.to_lowercase() == *term => print!("{}", snip_word.word.red()),
                                 _ => print!("{}", snip_word.word),
                             }
 
