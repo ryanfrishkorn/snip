@@ -297,7 +297,7 @@ pub fn find_by_graph(word: &str, text: Vec<&str>) -> Option<usize> {
 }
 
 /// Get the snip specified matching the given full-length uuid string.
-pub fn get_from_uuid(conn: &Connection, id: Uuid) -> Result<Snip, Box<dyn Error>> {
+pub fn get_from_uuid(conn: &Connection, id: &Uuid) -> Result<Snip, Box<dyn Error>> {
     let mut stmt = conn.prepare("SELECT uuid, timestamp, name, data FROM snip WHERE uuid = :id")?;
     let rows = stmt.query_and_then(&[(":id", &id.to_string())], |row| {
         snip_from_db(row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)
@@ -342,6 +342,23 @@ pub fn insert_snip(conn: &Connection, s: &Snip) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Return a vector of Uuid of all documents in the database
+pub fn uuid_list(conn: &Connection) -> Result<Vec<Uuid>, Box<dyn Error>> {
+    let mut ids: Vec<Uuid> = Vec::new();
+    let mut stmt = conn.prepare("SELECT uuid FROM snip")?;
+    let query_iter = stmt.query_and_then([], |row| -> Result<Uuid, Box<dyn Error>>{
+        let id_string: String = row.get(0)?;
+        let id = Uuid::try_parse(id_string.as_str())?;
+        Ok(id)
+    })?;
+
+    for id in query_iter.flatten() {
+        ids.push(id);
+    }
+
+    Ok(ids)
+}
+
 /// Print a list of all documents in the database.
 pub fn list_snips(
     conn: &Connection,
@@ -360,7 +377,7 @@ pub fn list_snips(
         // uuid
         match full_uuid {
             true => print!("{} ", s.uuid),
-            false => print!("{} ", split_uuid(s.uuid)[0]),
+            false => print!("{} ", split_uuid(&s.uuid)[0]),
         }
         // timestamp
         if show_time {
@@ -420,7 +437,7 @@ fn snip_from_db(
     })
 }
 
-pub fn split_uuid(uuid: Uuid) -> Vec<String> {
+pub fn split_uuid(uuid: &Uuid) -> Vec<String> {
     uuid.to_string().split('-').map(|s| s.to_string()).collect()
 }
 
@@ -448,7 +465,7 @@ mod tests {
         let conn = prepare_database().expect("preparing in-memory database");
         let id = Uuid::try_parse(ID_STR).expect("parsing uuid from static string");
 
-        let _s = get_from_uuid(&conn, id)?;
+        let _s = get_from_uuid(&conn, &id)?;
         Ok(())
     }
 
@@ -456,7 +473,7 @@ mod tests {
     fn test_index_snip() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database().expect("preparing in-memory database");
         let id = Uuid::try_parse(ID_STR)?;
-        let mut s = get_from_uuid(&conn, id)?;
+        let mut s = get_from_uuid(&conn, &id)?;
 
         s.index(&conn)?;
         // check data
@@ -525,7 +542,7 @@ mod tests {
         remove_snip(&conn, id)?;
 
         // verify it was deleted
-        match get_from_uuid(&conn, id) {
+        match get_from_uuid(&conn, &id) {
             Ok(_) => Err(Box::new(io::Error::new(
                 ErrorKind::Other,
                 "id is still present in database after attempted delete",

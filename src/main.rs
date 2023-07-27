@@ -177,7 +177,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 if attach_sub_matches.get_flag("long") {
                     print!("{} ", a.uuid);
                 } else {
-                    print!("{} ", snip::split_uuid(a.uuid)[0]);
+                    print!("{} ", snip::split_uuid(&a.uuid)[0]);
                 }
 
                 // timestamp
@@ -205,7 +205,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         // search for unique uuid to allow partial string arg
         let id = snip::search_uuid(&conn, id_str)?;
-        let mut s = snip::get_from_uuid(&conn, id)?;
+        let mut s = snip::get_from_uuid(&conn, &id)?;
 
         // check for raw or formatted output
         if let Some(raw) = sub_matches.get_one::<bool>("raw") {
@@ -288,10 +288,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let positions_all = results.1.clone();
 
                     // retrieve and analyze document to obtain context
-                    let mut s = snip::get_from_uuid(&conn, id)?;
+                    let mut s = snip::get_from_uuid(&conn, &id)?;
                     s.analyze()?;
                     println!("{}", s.name);
-                    println!("  {} [{}: {}]", snip::split_uuid(s.uuid)[0], term, positions_all.len());
+                    println!("  {} [{}: {}]", snip::split_uuid(&s.uuid)[0], term, positions_all.len());
 
                     for pos in positions_all {
                         // gather context indices and print them
@@ -360,7 +360,28 @@ fn main() -> Result<(), Box<dyn Error>> {
     // INDEX
     if let Some(("index", _)) = matches.subcommand() {
         snip::create_index_table(&conn)?;
-        snip::index_all_items(&conn)?;
+
+        let ids = snip::uuid_list(&conn)?;
+        let mut status_len: usize;
+        eprint!("indexing...");
+        for (i, id) in ids.iter().enumerate() {
+            let mut s = snip::get_from_uuid(&conn, id)?;
+
+            // display status
+            let status = format!("[{}/{}] {}", i + 1, &ids.len(), s.name);
+            status_len = status.chars().collect::<Vec<char>>().len();
+            eprint!("{}", status);
+
+            // analyze and index document
+            s.analyze()?;
+            s.index(&conn)?;
+
+            // clear output - rewind, overwrite w/space, rewind
+            for _ in 0..status_len {
+                eprint!("{} {}", 8u8 as char, 8u8 as char);
+            }
+        }
+        eprintln!("success");
     }
 
     Ok(())

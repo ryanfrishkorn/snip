@@ -224,7 +224,7 @@ mod tests {
     fn test_get_term_context() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database().expect("preparing in-memory database");
         let id = Uuid::try_parse(ID_STR)?;
-        let mut s = snip::get_from_uuid(&conn, id)?;
+        let mut s = snip::get_from_uuid(&conn, &id)?;
         s.analyze()?;
         // println!("{}", s.text);
 
