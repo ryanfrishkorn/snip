@@ -10,7 +10,6 @@ use std::error::Error;
 use std::io::Read;
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
-use crate::snip::get_from_uuid;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let cmd = Command::new("snip-rs")
@@ -275,13 +274,19 @@ fn main() -> Result<(), Box<dyn Error>> {
             // TODO remove duplicate search terms if supplied
 
             // search for all terms and print
-            let results = snip::search_index_terms(&conn, &terms_stem)?;
+            let results = match snip::search_index_terms(&conn, &terms_stem) {
+                Ok(v) => v,
+                Err(_) => {
+                    eprintln!("no matches");
+                    return Ok(());
+                },
+            };
             for term in terms_stem.iter() {
                 let (id, positions) = results.get(term.as_str()).ok_or("error parsing results from hashmap")?;
                 // println!("uuid: {} positions: {:?}", id, positions);
 
                 // retrieve and analyze document to obtain context
-                let mut s = get_from_uuid(&conn, *id)?;
+                let mut s = snip::get_from_uuid(&conn, *id)?;
                 s.analyze()?;
                 // let context = s.analysis.get_term_context_words(positions.to_owned());
                 println!("{}", s.name);
