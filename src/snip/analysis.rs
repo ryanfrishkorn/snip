@@ -139,7 +139,7 @@ pub fn search_index_term(conn: &Connection, term: &String) -> Result<(Uuid, Vec<
         return Ok(results);
     }
 
-    Err(Box::new(SnipError::General("no matches found in index".to_string())))
+    Err(Box::new(SnipError::SearchNoMatches("no matches found in index".to_string())))
 }
 
 

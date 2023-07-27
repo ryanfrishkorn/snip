@@ -5,6 +5,7 @@ use std::fmt;
 pub enum SnipError {
     Analysis(String),
     General(String),
+    SearchNoMatches(String),
     UuidNotFound(String),
 }
 
@@ -15,6 +16,7 @@ impl fmt::Display for SnipError {
         match self {
             SnipError::Analysis(s) => write!(f, "Analysis encountered an error: {}", s),
             SnipError::General(s) => write!(f, "{}", s),
+            SnipError::SearchNoMatches(s) => write!(f, "{}", s),
             SnipError::UuidNotFound(s) => write!(f, "uuid {} was not found", s),
         }
     }
@@ -33,6 +35,13 @@ impl fmt::Debug for SnipError {
             SnipError::General(s) => write!(
                 f,
                 "{{ SnipError::General({}) file: {}, line: {} }}",
+                s,
+                file!(),
+                line!()
+            ),
+            SnipError::SearchNoMatches(s) => write!(
+                f,
+                "{{ SnipError::NoIndexMatches({}) file: {}, line: {} }}",
                 s,
                 file!(),
                 line!()
