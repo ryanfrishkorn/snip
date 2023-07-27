@@ -122,8 +122,10 @@ pub fn search_data(conn: &Connection, term: &String) -> Result<Vec<Uuid>, Box<dy
     Ok(results)
 }
 
-pub fn search_index_term(conn: &Connection, term: &String) -> Result<(Uuid, Vec<usize>), Box<dyn Error>> {
-    let results: (Uuid, Vec<usize>);
+/// Search for term and return a vector containing uuid and vector of term positions
+pub fn search_index_term(conn: &Connection, term: &String) -> Result<Vec<(Uuid, Vec<usize>)>, Box<dyn Error>> {
+    let mut results: Vec<(Uuid, Vec<usize>)> = Vec::new();
+    let mut results_single: (Uuid, Vec<usize>);
     let mut stmt = conn.prepare("SELECT uuid, positions FROM snip_index_rs WHERE term = :term")?;
     let rows = stmt.query_and_then(&[(":term", &term)], |row| -> Result<(String, String), Box<dyn Error>> {
         let id: String = row.get(0)?;
@@ -131,26 +133,45 @@ pub fn search_index_term(conn: &Connection, term: &String) -> Result<(Uuid, Vec<
         Ok((id, positions))
     })?;
 
-    if let Some(row) = rows.into_iter().flatten().next() {
+    // if let Some(row) = rows.into_iter().flatten().next() {
+    for row in rows.flatten() {
         // parse uuid, split positions string and create vector
         let id: Uuid = Uuid::try_parse(row.0.as_str())?;
         let positions_split: Vec<usize> = row.1.split(',').map(|x| x.parse::<usize>().expect("converting position string to usize")).collect();
-        results = (id, positions_split);
-        return Ok(results);
+        results_single = (id, positions_split);
+        results.push(results_single);
+        // return Ok(results_single);
     }
-
-    Err(Box::new(SnipError::SearchNoMatches("no matches found in index".to_string())))
+    if results.is_empty() {
+        return Err(Box::new(SnipError::SearchNoMatches("no matches found in index".to_string())));
+    }
+    Ok(results)
 }
 
+/// Search the index and return uuids that contain term
+pub fn search_uuids_matching_term(conn: &Connection, term: String) -> Result<Vec<Uuid>, Box<dyn Error>> {
+    let mut ids: Vec<Uuid> = Vec::new();
+    let mut stmt = conn.prepare("SELECT uuid FROM snip_index_rs WHERE term = :term")?;
+    let rows = stmt.query_and_then(&[(":term", &term)], |row| -> Result<String, Box<dyn Error>> {
+        let id: String = row.get(0)?;
+        Ok(id)
+    })?;
+
+    for row in rows.flatten() {
+        let id = Uuid::try_parse(row.as_str())?;
+        ids.push(id);
+    }
+    Ok(ids)
+}
 
 /// Searches the database index returning UUIDs that match supplied terms
-pub fn search_index_terms(conn: &Connection, terms: &Vec<String>) -> Result<HashMap<String, (Uuid, Vec<usize>)>, Box<dyn Error>> {
-    let mut results: HashMap<String, (Uuid, Vec<usize>)> = HashMap::new();
+pub fn search_index_terms(conn: &Connection, terms: &Vec<String>) -> Result<HashMap<String, Vec<(Uuid, Vec<usize>)>>, Box<dyn Error>> {
+    let mut results: HashMap<String, Vec<(Uuid, Vec<usize>)>> = HashMap::new();
 
     // search each term
     for term in terms {
-        let result_single = search_index_term(conn, term)?;
-        results.insert(term.clone(), result_single);
+        let results_single_term = search_index_term(conn, term)?;
+        results.insert(term.clone(), results_single_term);
     }
     Ok(results)
 }

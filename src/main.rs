@@ -274,51 +274,52 @@ fn main() -> Result<(), Box<dyn Error>> {
             // TODO remove duplicate search terms if supplied
 
             // search for all terms and print
-            let results = match snip::search_index_terms(&conn, &terms_stem) {
+            let results_all = match snip::search_index_terms(&conn, &terms_stem) {
                 Ok(v) => v,
                 Err(_) => {
                     eprintln!("no matches");
                     return Ok(());
                 },
             };
+
             for term in terms_stem.iter() {
-                let (id, positions) = results.get(term.as_str()).ok_or("error parsing results from hashmap")?;
-                // println!("uuid: {} positions: {:?}", id, positions);
+                for results in results_all.get(term).ok_or("error parsing results from hashmap")? {
+                    let id = results.0;
+                    let positions_all = results.1.clone();
 
-                // retrieve and analyze document to obtain context
-                let mut s = snip::get_from_uuid(&conn, *id)?;
-                s.analyze()?;
-                // let context = s.analysis.get_term_context_words(positions.to_owned());
-                println!("{}", s.name);
-                println!("  {} [{}: {}]", snip::split_uuid(s.uuid)[0], term, positions.len());
+                    // retrieve and analyze document to obtain context
+                    let mut s = snip::get_from_uuid(&conn, id)?;
+                    s.analyze()?;
+                    println!("{}", s.name);
+                    println!("  {} [{}: {}]", snip::split_uuid(s.uuid)[0], term, positions_all.len());
 
-                for pos in positions {
-                    // gather context indices and print them
-                    let context = s.analysis.get_term_context_positions(*pos, 8);
-                    // print!("    [0-0] \"");
-                    let position_first = context.first().ok_or("finding first context position")?;
-                    let position_last = context.last().ok_or("finding last context position")?;
-                    print!("    [{}-{}] \"", position_first, position_last);
-                    for (i, p) in context.iter().enumerate() {
-                        let snip_word = &s.analysis.words[*p];
-                        // check for matching word
-                        match &snip_word.stem {
-                            x if x.to_lowercase() == *term => print!("{}", snip_word.word.red()),
-                            _ => print!("{}", snip_word.word),
-                        }
-                        // print!("{}", snip_word.word);
-                        // if let Some(suffix) = &s.analysis.words[idx].suffix {
-                        if let Some(suffix) = &snip_word.suffix {
-                            if i == context.len() - 1 { // do not print the final suffix
-                                break;
+                    for pos in positions_all {
+                        // gather context indices and print them
+                        let context = s.analysis.get_term_context_positions(pos, 8);
+                        let position_first = context.first().ok_or("finding first context position")?;
+                        let position_last = context.last().ok_or("finding last context position")?;
+
+                        print!("    [{}-{}] \"", position_first, position_last);
+                        for (i, p) in context.iter().enumerate() {
+                            let snip_word = &s.analysis.words[*p];
+                            // check for matching word
+                            match &snip_word.stem {
+                                x if x.to_lowercase() == *term => print!("[{}]", snip_word.word.red()),
+                                _ => print!("{}", snip_word.word),
                             }
-                            // TODO remove repetitive whitespace to conform formatted text to search results
-                            print!("{}", suffix.replace('\n', " ")); // no newlines
+
+                            if let Some(suffix) = &snip_word.suffix {
+                                if i == context.len() - 1 { // do not print the final suffix
+                                    break;
+                                }
+                                // TODO remove repetitive whitespace to conform formatted text to search results
+                                print!("{}", suffix.replace('\n', " ")); // no newlines
+                            }
                         }
+                        println!("\"");
                     }
-                    println!("\"");
+                    println!();
                 }
-                println!();
             }
 
             /*
