@@ -2,6 +2,7 @@ use chrono::{DateTime, FixedOffset};
 use rusqlite::{Connection, DatabaseName};
 use std::error::Error;
 use std::io::Read;
+use std::path::Path;
 use uuid::Uuid;
 
 use crate::snip::SnipError;
@@ -46,6 +47,44 @@ fn attachment_from_db(
         size,
         data,
     })
+}
+
+/// Add an attachment to the database and attach to supplied document Uuid
+pub fn add_attachment(conn: &Connection, snip_uuid: Uuid, path: &Path) -> Result<(), Box<dyn Error>> {
+    // check existence of file
+    let uuid = Uuid::new_v4();
+    let timestamp_utc = chrono::Utc::now();
+    let timestamp = timestamp_utc.fixed_offset();
+    let name = path.file_name().ok_or("parsing attachment basename")?.to_string_lossy().to_string();
+    let data = std::fs::read(path)?;
+    let size = data.len();
+
+    // assign new Attachment
+    let a = Attachment {
+        uuid,
+        snip_uuid,
+        timestamp,
+        name,
+        data,
+        size,
+    };
+
+    // insert
+    let mut stmt = conn.prepare("INSERT INTO snip_attachment(uuid, snip_uuid, timestamp, name, data, size) VALUES(:uuid, :snip_uuid, :timestamp, :name, ZEROBLOB(:size), :size)")?;
+    let result = stmt.execute(&[
+        (":uuid", &a.uuid.to_string()),
+        (":snip_uuid", &a.snip_uuid.to_string()),
+        (":timestamp", &a.timestamp.to_rfc3339().to_string()),
+        (":name", &a.name.to_string()),
+        (":size", &a.size.to_string()),
+    ])?;
+    assert_eq!(result, 1);
+
+    // add blob data
+    let row_id = conn.last_insert_rowid();
+    let mut blob = conn.blob_open(DatabaseName::Main, "snip_attachment", "data", row_id, false)?;
+    blob.write_at(a.data.as_slice(), 0)?;
+    Ok(())
 }
 
 /// Get an attachment from database
@@ -93,6 +132,24 @@ mod test {
     use super::*;
     use snip_rs::SnipError;
     use crate::snip::test_prep::*;
+
+    #[test]
+    fn test_add_attachment() -> Result<(), Box<dyn Error>> {
+        let conn = prepare_database().expect("preparing in-memory database");
+
+        let snip_uuid = Uuid::try_parse(ID_STR)?;
+        let path_str = "test_data/attachments/udhr.pdf";
+        let path = Path::new(path_str);
+        add_attachment(&conn, snip_uuid, path)?;
+
+        // print out attachments to verify
+        let attachments = get_attachment_all(&conn)?;
+        for id in attachments {
+            let a = get_attachment_from_uuid(&conn, id)?;
+            println!("uuid: {} snip_uud: {} size: {} name: {}", a.uuid, a.snip_uuid, a.size, a.name);
+        }
+        Ok(())
+    }
 
     #[test]
     fn test_get_attachment_from_uuid() -> Result<(), Box<dyn Error>> {

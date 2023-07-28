@@ -8,6 +8,7 @@ use snip::{Snip, SnipAnalysis};
 use std::env;
 use std::error::Error;
 use std::io::Read;
+use std::path::Path;
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 
@@ -54,7 +55,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 .num_args(0)
                                 .action(ArgAction::SetTrue),
                         ),
-                ),
+                )
+                .subcommand(
+                    Command::new("add")
+                        .about("add file to document")
+                        .arg_required_else_help(true)
+                        .arg(
+                            Arg::new("snip_uuid")
+                                .num_args(1)
+                        )
+                        .arg(
+                            Arg::new("files")
+                                .action(ArgAction::Append)
+                        )
+                )
         )
         .subcommand(
             Command::new("get")
@@ -198,6 +212,29 @@ fn main() -> Result<(), Box<dyn Error>> {
                 // name
                 print!("{}", a.name);
                 println!();
+            }
+        }
+
+        // ATTACH ADD
+        if let Some(("add", attach_sub_matches)) = sub_matches.subcommand() {
+            let id = attach_sub_matches.get_one::<String>("snip_uuid").ok_or("parsing snip_uuid")?;
+            let snip_uuid = Uuid::try_parse(id.as_str())?;
+
+            let files = attach_sub_matches.get_many::<String>("files");
+            if let Some(files) = files {
+                // construct document (also verifies that the snip_uuid is present)
+                let s = snip::get_from_uuid(&conn, &snip_uuid)?;
+                println!("{} {}", s.uuid, s.name);
+
+                // add each file
+                for f in files {
+                    let path = Path::new(f);
+                    snip::add_attachment(&conn, snip_uuid, path)?;
+                    println!("  added {}", f);
+                }
+            } else {
+                eprintln!("no files specified");
+                std::process::exit(1);
             }
         }
     }
