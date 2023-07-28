@@ -4,7 +4,7 @@ use rust_stemmers::Stemmer;
 use std::collections::HashMap;
 use std::error::Error;
 use std::io;
-use std::io::{ErrorKind, Read};
+use std::io::Read;
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 
@@ -404,10 +404,7 @@ pub fn remove_snip(conn: &Connection, id: Uuid) -> Result<(), Box<dyn Error>> {
     let n = stmt.execute([id.to_string()]);
     match n {
         Ok(n) if n == 1 => Ok(()),
-        _ => Err(Box::new(io::Error::new(
-            ErrorKind::Other,
-            "delete did not return a singular result",
-        ))),
+        _ => Err(Box::new(SnipError::General("delete did not return a singular result".to_string()))),
     }
 }
 
@@ -543,12 +540,8 @@ mod tests {
 
         // verify it was deleted
         match get_from_uuid(&conn, &id) {
-            Ok(_) => Err(Box::new(io::Error::new(
-                ErrorKind::Other,
-                "id is still present in database after attempted delete",
-            ))),
+            Ok(_) => Err(Box::new(SnipError::General("document is still present after attempted deletion".to_string()))),
             Err(_) => Ok(()),
         }
     }
-
 }

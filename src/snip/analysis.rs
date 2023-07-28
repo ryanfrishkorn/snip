@@ -1,5 +1,3 @@
-use std::io;
-use std::io::ErrorKind;
 use std::collections::HashMap;
 use std::error::Error;
 use rusqlite::Connection;
@@ -241,10 +239,7 @@ pub fn search_uuid(conn: &Connection, id_partial: &str) -> Result<Uuid, Box<dyn 
     // return only if a singular result is matched
     let mut id_found = "".to_string();
     let mut first_run = true;
-    let err_not_found = Box::new(io::Error::new(
-        ErrorKind::NotFound,
-        "could not find unique uuid match",
-    ));
+    let err_not_found = Box::new(SnipError::UuidNotFound("did not find unique uuid".to_string()));
     for id in query_iter {
         if first_run {
             first_run = false;
