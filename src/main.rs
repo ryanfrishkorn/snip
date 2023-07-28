@@ -34,6 +34,19 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .about("Attach binary data to document")
                 .subcommand_required(true)
                 .subcommand(
+                    Command::new("add")
+                        .about("add file to document")
+                        .arg_required_else_help(true)
+                        .arg(
+                            Arg::new("snip_uuid")
+                                .num_args(1)
+                        )
+                        .arg(
+                            Arg::new("files")
+                                .action(ArgAction::Append)
+                        )
+                )
+                .subcommand(
                     Command::new("ls")
                         .about("list attachments")
                         .arg_required_else_help(false)
@@ -57,18 +70,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                         ),
                 )
                 .subcommand(
-                    Command::new("add")
-                        .about("add file to document")
+                    Command::new("rm")
+                        .about("remove attachments")
                         .arg_required_else_help(true)
                         .arg(
-                            Arg::new("snip_uuid")
-                                .num_args(1)
-                        )
-                        .arg(
-                            Arg::new("files")
+                            Arg::new("uuids")
                                 .action(ArgAction::Append)
                         )
                 )
+
         )
         .subcommand(
             Command::new("get")
@@ -186,6 +196,30 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // ATTACH
     if let Some(("attach", sub_matches)) = matches.subcommand() {
+
+        // ATTACH ADD
+        if let Some(("add", attach_sub_matches)) = sub_matches.subcommand() {
+            let id = attach_sub_matches.get_one::<String>("snip_uuid").ok_or("parsing snip_uuid")?;
+            let snip_uuid = Uuid::try_parse(id.as_str())?;
+
+            let files = attach_sub_matches.get_many::<String>("files");
+            if let Some(files) = files {
+                // construct document (also verifies that the snip_uuid is present)
+                let s = snip::get_from_uuid(&conn, &snip_uuid)?;
+                println!("{} {}", s.uuid, s.name);
+
+                // add each file
+                for f in files {
+                    let path = Path::new(f);
+                    snip::add_attachment(&conn, snip_uuid, path)?;
+                    println!("  added {}", f);
+                }
+            } else {
+                eprintln!("no files specified");
+                std::process::exit(1);
+            }
+        }
+
         // ATTACH LS
         if let Some(("ls", attach_sub_matches)) = sub_matches.subcommand() {
             let ids = snip::get_attachment_all(&conn)?;
@@ -215,26 +249,18 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
 
-        // ATTACH ADD
-        if let Some(("add", attach_sub_matches)) = sub_matches.subcommand() {
-            let id = attach_sub_matches.get_one::<String>("snip_uuid").ok_or("parsing snip_uuid")?;
-            let snip_uuid = Uuid::try_parse(id.as_str())?;
+        // ATTACH RM
+        if let Some(("rm", attach_sub_matches)) = sub_matches.subcommand() {
+            let ids_args = attach_sub_matches.get_many::<String>("uuids");
 
-            let files = attach_sub_matches.get_many::<String>("files");
-            if let Some(files) = files {
-                // construct document (also verifies that the snip_uuid is present)
-                let s = snip::get_from_uuid(&conn, &snip_uuid)?;
-                println!("{} {}", s.uuid, s.name);
-
-                // add each file
-                for f in files {
-                    let path = Path::new(f);
-                    snip::add_attachment(&conn, snip_uuid, path)?;
-                    println!("  added {}", f);
+            if let Some(ids_str) = &ids_args {
+                let total = ids_str.len();
+                for (i, id_str) in ids_str.clone().enumerate() {
+                    let id = Uuid::try_parse(id_str)?;
+                    let a = snip::get_attachment_from_uuid(&conn, id)?;
+                    a.remove(&conn)?;
+                    println!("[{}/{}] removed {} {}", i + 1, total, a.uuid, a.name);
                 }
-            } else {
-                eprintln!("no files specified");
-                std::process::exit(1);
             }
         }
     }

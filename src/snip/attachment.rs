@@ -17,6 +17,18 @@ pub struct Attachment {
     pub size: usize,
 }
 
+impl Attachment {
+    /// Remove attachment by Uuid
+    pub fn remove(&self, conn: &Connection) -> Result<(), Box<dyn Error>> {
+        let mut stmt = conn.prepare("DELETE FROM snip_attachment WHERE uuid = :uuid")?;
+        let rows_affected = stmt.execute(&[(":uuid", &self.uuid.to_string())])?;
+        if rows_affected != 1 {
+            return Err(Box::new(SnipError::General(format!("expected 1 row affected, got {}", rows_affected))));
+        }
+        Ok(())
+    }
+}
+
 /// Returns an Attachment struct parsed from the database
 fn attachment_data_from_db(conn: &Connection, row_id: i64) -> Result<Vec<u8>, Box<dyn Error>> {
     let mut blob = conn.blob_open(DatabaseName::Main, "snip_attachment", "data", row_id, true)?;
@@ -160,6 +172,21 @@ mod test {
 
         if a.uuid != id {
             return Err(Box::new(SnipError::UuidNotFound(format!("uuid expected: {} got: {}", id, a.uuid).to_string())));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_remove() -> Result<(), Box<dyn Error>> {
+        let conn = prepare_database().expect("preparing in-memory database");
+
+        let id = Uuid::try_parse(ID_ATTACH_STR)?;
+        let a = get_attachment_from_uuid(&conn, id)?;
+        a.remove(&conn)?;
+
+        // attempt to retrieve again - should be missing
+        if get_attachment_from_uuid(&conn, id).is_ok() {
+            return Err(Box::new(SnipError::General("found attachment in database after attempted removal".to_string())));
         }
         Ok(())
     }
