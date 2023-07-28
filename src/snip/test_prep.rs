@@ -50,11 +50,11 @@ pub fn import_snip_data(conn: &Connection) -> Result<(), Box<dyn Error>> {
         let snip_id = record.get(1).expect("getting uuid field");
         let timestamp = record.get(2).expect("getting timestamp field");
         let name = record.get(3).expect("getting name field");
-        let size = record.get(4).expect("getting size field");
 
         // use name to read data from test file
         let data = std::fs::read(format!("{}/{}", "test_data/attachments/", name))?;
         let data = data.as_slice();
+        let size = data.len();
 
         let mut stmt = conn.prepare("INSERT INTO snip_attachment(uuid, snip_uuid, timestamp, name, data, size) VALUES (:id, :snip_id, :timestamp, :name, ZEROBLOB(:blob_size), :size)")?;
         stmt.execute(&[
@@ -62,8 +62,8 @@ pub fn import_snip_data(conn: &Connection) -> Result<(), Box<dyn Error>> {
             (":snip_id", snip_id),
             (":timestamp", timestamp),
             (":name", name),
-            (":blob_size", data.len().to_string().as_str()),
-            (":size", size),
+            (":blob_size", size.to_string().as_str()),
+            (":size", size.to_string().as_str()),
         ])?;
         let row_id = conn.last_insert_rowid();
 
