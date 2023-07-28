@@ -187,6 +187,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             timestamp: chrono::Local::now().fixed_offset(),
             text,
             analysis: SnipAnalysis { words: vec![] },
+            attachments: Vec::new(),
         };
 
         snip::insert_snip(&conn, &s)?;
@@ -291,6 +292,17 @@ fn main() -> Result<(), Box<dyn Error>> {
                     match s.text.chars().last() {
                         Some(v) if v == '\n' => println!("{}----", s.text),
                         _ => println!("{}\n----", s.text),
+                    }
+
+                    // show attachments
+                    s.collect_attachments(&conn)?;
+                    if !s.attachments.is_empty() {
+                        println!("attachments:");
+
+                        println!("{:<36} {:>10} name", "uuid", "bytes");
+                        for a in &s.attachments {
+                            println!("{} {:>10} {}", a.uuid, a.size, a.name);
+                        }
                     }
                 }
             }

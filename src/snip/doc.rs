@@ -7,10 +7,10 @@ use std::io;
 use std::io::Read;
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
+use crate::snip;
 
-use crate::snip::{SnipAnalysis, SnipError, SnipWord, WordIndex};
+use crate::snip::{Attachment, SnipAnalysis, SnipError, SnipWord, WordIndex};
 
-#[derive(Debug)]
 /// Snip is the main struct representing a document.
 pub struct Snip {
     pub uuid: Uuid,
@@ -18,6 +18,7 @@ pub struct Snip {
     pub text: String,
     pub timestamp: DateTime<FixedOffset>,
     pub analysis: SnipAnalysis,
+    pub attachments: Vec<Attachment>,
 }
 
 impl Snip {
@@ -33,6 +34,26 @@ impl Snip {
     fn drop_word_indices(&self, conn: &Connection) -> Result<(), Box<dyn Error>> {
         let mut stmt = conn.prepare("DELETE FROM snip_index_rs WHERE uuid = :uuid")?;
         stmt.execute(&[(":uuid", &self.uuid.to_string())])?;
+        Ok(())
+    }
+
+    /// Collects all attachments belonging to this document
+    pub fn collect_attachments(&mut self, conn: &Connection) -> Result<(), Box<dyn Error>> {
+        // clear current data from vector
+        self.attachments.clear();
+        let mut stmt = conn.prepare("SELECT uuid FROM snip_attachment WHERE snip_uuid = :snip_uuid")?;
+        let query_iter = stmt.query_and_then(&[
+            (":snip_uuid", &self.uuid.to_string())
+        ], |row| -> Result<String, rusqlite::Error> {
+            let id_str = row.get(0)?;
+            Ok(id_str)
+        })?;
+
+        for row in query_iter.flatten() {
+            let id = Uuid::try_parse(row.as_str())?;
+            let a = snip::get_attachment_from_uuid(conn, id)?;
+            self.attachments.push(a);
+        }
         Ok(())
     }
 
@@ -400,6 +421,13 @@ pub fn read_lines_from_stdin() -> Result<String, Box<dyn Error>> {
 
 /// Remove a document matching given uuid
 pub fn remove_snip(conn: &Connection, id: Uuid) -> Result<(), Box<dyn Error>> {
+    let mut s = snip::get_from_uuid(conn, &id)?;
+    // collect and remove attachments
+    s.collect_attachments(conn)?;
+    for a in s.attachments {
+        a.remove(conn)?;
+    }
+
     let mut stmt = conn.prepare("DELETE FROM snip WHERE uuid = ?1")?;
     let n = stmt.execute([id.to_string()]);
     match n {
@@ -409,6 +437,9 @@ pub fn remove_snip(conn: &Connection, id: Uuid) -> Result<(), Box<dyn Error>> {
 }
 
 /// Returns a Snip struct parsed from the database
+///
+/// By default, the document is returned without attachments collected. This is for
+/// performance reasons, as many operations require no attachment knowledge.
 fn snip_from_db(
     id: String,
     ts: String,
@@ -431,6 +462,7 @@ fn snip_from_db(
         timestamp,
         text,
         analysis: SnipAnalysis { words: vec![] },
+        attachments: Vec::new(),
     })
 }
 
@@ -454,8 +486,24 @@ pub fn strip_punctuation(s: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
+    use crate::snip::get_attachment_from_uuid;
     use super::*;
     use crate::snip::test_prep::*;
+
+    #[test]
+    fn test_collect_attachments() -> Result<(), Box<dyn Error>> {
+        let conn = prepare_database().expect("preparing in-memory database");
+        let id = Uuid::try_parse(ID_STR)?;
+        let mut s = get_from_uuid(&conn, &id)?;
+        assert_eq!(s.attachments.len(), 0);
+
+        s.collect_attachments(&conn)?;
+        assert_eq!(s.attachments.len(), 1); // expect one attachment
+        // repeat the test to ensure that document refreshes properly
+        s.collect_attachments(&conn)?;
+        assert_eq!(s.attachments.len(), 1); // expect one attachment
+        Ok(())
+    }
 
     #[test]
     fn test_get_from_uuid() -> Result<(), Box<dyn Error>> {
@@ -514,6 +562,7 @@ mod tests {
             timestamp: chrono::Local::now().fixed_offset(),
             text: "Test Data".to_string(),
             analysis: SnipAnalysis { words: Vec::new() },
+            attachments: Vec::new(),
         };
         insert_snip(&conn, &s)?;
 
@@ -536,12 +585,18 @@ mod tests {
     fn test_remove_snip() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database().expect("preparing in-memory database");
         let id = Uuid::try_parse(ID_STR)?;
+        let attachment_id = Uuid::try_parse(ID_ATTACH_STR)?;
         remove_snip(&conn, id)?;
 
-        // verify it was deleted
-        match get_from_uuid(&conn, &id) {
-            Ok(_) => Err(Box::new(SnipError::General("document is still present after attempted deletion".to_string()))),
-            Err(_) => Ok(()),
+        // verify attachment was deleted
+        if get_attachment_from_uuid(&conn, attachment_id).is_ok() {
+            return Err(Box::new(SnipError::General("attachment is still present after snip deletion call".to_string())));
         }
+
+        // verify document was deleted
+        if get_from_uuid(&conn, &id).is_ok() {
+            return Err(Box::new(SnipError::General("document is still present after attempted deletion".to_string())));
+        }
+        Ok(())
     }
 }
