@@ -157,6 +157,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             Command::new("stats")
                 .about("Show stats about the document index")
                 .arg_required_else_help(false)
+                .arg(
+                    Arg::new("all_terms")
+                        .long("all-terms")
+                        .num_args(0)
+                        .action(ArgAction::SetTrue)
+                )
         )
         .subcommand(
             Command::new("stem")
@@ -488,17 +494,26 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // STATS
-    if let Some(("stats", _)) = matches.subcommand() {
-        let terms_to_display = 20;
+    if let Some(("stats", sub_matches)) = matches.subcommand() {
+        let mut max_terms = 20;
+        if let Some(all_terms) = sub_matches.get_one::<bool>("all_terms") {
+            if *all_terms {
+                max_terms = 0;
+            }
+        }
         let stats = snip::stats_index(&conn)?;
         println!("Terms:");
         println!("  indexed: {}", stats.terms_total);
         println!("  distinct: {}", stats.terms_unique);
-        println!("  frequent (top {}):", terms_to_display);
+        print!("  occurrences:");
+        if max_terms != 0 {
+            print!(" (top {})", max_terms);
+        }
+        println!();
         for (i, (term, count)) in stats.terms_with_counts.iter().enumerate() {
             let percentage: f32 = (*count as f32 / stats.terms_total as f32) * 100.0;
             println!("    {:<6} ({:.2}%) {}", count, percentage, term);
-            if i >= terms_to_display {
+            if i >= max_terms && max_terms != 0 {
                 break;
             }
         }
