@@ -11,6 +11,7 @@ use std::io::Read;
 use std::path::Path;
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
+use snip_rs::SnipError;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let cmd = Command::new("snip-rs")
@@ -78,7 +79,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 .action(ArgAction::Append)
                         )
                 )
-
+                .subcommand(
+                    Command::new("write")
+                        .about("write attachment to local file")
+                        .arg_required_else_help(true)
+                        .arg(
+                            Arg::new("id")
+                                .num_args(1)
+                        )
+                        .arg(
+                            Arg::new("output")
+                                .short('o')
+                                .num_args(1)
+                        )
+                )
         )
         .subcommand(
             Command::new("get")
@@ -264,6 +278,29 @@ fn main() -> Result<(), Box<dyn Error>> {
                     println!("[{}/{}] removed {} {}", i + 1, total, a.uuid, a.name);
                 }
             }
+        }
+
+        // ATTACH WRITE
+        if let Some(("write", attach_sub_matches)) = sub_matches.subcommand() {
+            // obtain attachment
+            let arg_id = attach_sub_matches.get_one::<String>("id");
+            let id_str = match arg_id {
+                Some(v) => v,
+                None => return Err(Box::new(SnipError::General("no attachment id specified".to_string()))),
+            };
+            let id = snip::search_attachment_uuid(&conn, id_str)?;
+            let a = snip::get_attachment_from_uuid(&conn, id)?;
+
+            // determine output path
+            let arg_output = attach_sub_matches.get_one::<String>("output");
+            let output: String = match arg_output {
+                Some(v) => v.clone(),
+                None => a.name.clone(),
+            };
+
+            // write file
+            a.write(&output)?;
+            println!("{} written ({} bytes)", output, a.size);
         }
     }
 

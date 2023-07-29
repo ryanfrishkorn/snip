@@ -1,6 +1,7 @@
 use chrono::{DateTime, FixedOffset};
 use rusqlite::{Connection, DatabaseName};
 use std::error::Error;
+use std::fs;
 use std::io::Read;
 use std::path::Path;
 use uuid::Uuid;
@@ -25,6 +26,18 @@ impl Attachment {
         if rows_affected != 1 {
             return Err(Box::new(SnipError::General(format!("expected 1 row affected, got {}", rows_affected))));
         }
+        Ok(())
+    }
+
+    /// Write attachment data to specified file path.
+    pub fn write(&self, path: &str) -> Result<(), Box<dyn Error>> {
+        // check overwrite
+        let p = Path::new(path);
+        if p.exists() {
+            return Err(Box::new(SnipError::General(format!("refusing to overwrite existing file {}", path))));
+        }
+
+        fs::write(path, &self.data)?;
         Ok(())
     }
 }
@@ -172,6 +185,7 @@ pub fn search_attachment_uuid(conn: &Connection, id_partial: &str) -> Result<Uui
 mod test {
     use super::*;
     use std::collections::HashMap;
+    use std::fs;
     use crate::snip::test_prep::*;
     use crate::snip::SnipError;
 
@@ -260,6 +274,35 @@ mod test {
                 Err(e) => panic!("{}, full: {}, partial: {}", e, ID_ATTACH_STR, &p.0),
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_attachment_write() -> Result<(), Box<dyn Error>> {
+        let conn = prepare_database()?;
+
+        let id = Uuid::try_parse(ID_ATTACH_STR)?;
+        let a = get_attachment_from_uuid(&conn, id)?;
+
+        let output_default = a.name.as_str();
+        let output_named = "test_lorem_ipsum.pdf";
+
+        // default filename
+        let p = Path::new(&output_default);
+        a.write(output_default)?;
+        if !p.exists() {
+            return Err(Box::new(SnipError::General(format!("expected file {output_default} to exist"))));
+        }
+        fs::remove_file(p)?;
+
+        // filename specified
+        let p = Path::new(&output_named);
+        a.write(output_named)?;
+        if !p.exists() {
+            return Err(Box::new(SnipError::General(format!("expected file {output_named} to exist"))));
+        }
+        fs::remove_file(p)?;
+
         Ok(())
     }
 }
