@@ -200,8 +200,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         // ATTACH ADD
         if let Some(("add", attach_sub_matches)) = sub_matches.subcommand() {
-            let id = attach_sub_matches.get_one::<String>("snip_uuid").ok_or("parsing snip_uuid")?;
-            let snip_uuid = Uuid::try_parse(id.as_str())?;
+            let id_str = attach_sub_matches.get_one::<String>("snip_uuid").ok_or("parsing snip_uuid")?;
+            let snip_uuid = snip::search_uuid(&conn, id_str)?;
+            // let snip_uuid = Uuid::try_parse(id.as_str())?;
 
             let files = attach_sub_matches.get_many::<String>("files");
             if let Some(files) = files {
@@ -257,7 +258,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             if let Some(ids_str) = &ids_args {
                 let total = ids_str.len();
                 for (i, id_str) in ids_str.clone().enumerate() {
-                    let id = Uuid::try_parse(id_str)?;
+                    let id = snip::search_attachment_uuid(&conn, id_str)?;
                     let a = snip::get_attachment_from_uuid(&conn, id)?;
                     a.remove(&conn)?;
                     println!("[{}/{}] removed {} {}", i + 1, total, a.uuid, a.name);

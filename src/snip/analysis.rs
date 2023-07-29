@@ -231,31 +231,28 @@ pub fn search_uuid(conn: &Connection, id_partial: &str) -> Result<Uuid, Box<dyn 
     let mut stmt = conn.prepare("SELECT uuid from snip WHERE uuid LIKE :id LIMIT 2")?;
     let id_partial_fuzzy = format!("{}{}{}", "%", id_partial, "%");
 
-    let query_iter = stmt.query_map(&[(":id", &id_partial_fuzzy)], |row| {
+    let rows = stmt.query_map(&[(":id", &id_partial_fuzzy)], |row| {
         let id_str = row.get(0)?;
         Ok(id_str)
     })?;
 
-    // return only if a singular result is matched
-    let mut id_found = "".to_string();
-    let mut first_run = true;
-    let err_not_found = Box::new(SnipError::UuidNotFound("did not find unique uuid".to_string()));
-    for id in query_iter {
-        if first_run {
-            first_run = false;
-            id_found = id.unwrap();
+    // return only if a singular result is matched, so we check for two results
+    let mut id_str = String::new();
+    for (i, id) in rows.into_iter().enumerate() {
+        if i == 0 {
+            id_str = id.unwrap();
         } else {
-            return Err(err_not_found);
+            return Err(Box::new(SnipError::UuidMultipleMatches(format!("provided partial {} returned multiple document uuids", id_partial))));
         }
     }
 
-    if !id_found.is_empty() {
-        return match Uuid::parse_str(&id_found) {
+    if !id_str.is_empty() {
+        return match Uuid::parse_str(&id_str) {
             Ok(v) => Ok(v),
             Err(e) => Err(Box::new(e)),
         };
     }
-    Err(err_not_found)
+    Err(Box::new(SnipError::UuidNotFound(format!("document uuid not found using partial {}", id_partial))))
 }
 
 #[cfg(test)]
