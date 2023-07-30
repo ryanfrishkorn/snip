@@ -5,6 +5,7 @@ use colored::*;
 use rusqlite::{Connection, OpenFlags, Result};
 use rust_stemmers::{Algorithm, Stemmer};
 use snip::{Snip, SnipAnalysis};
+use std::collections::HashMap;
 use std::env;
 use std::error::Error;
 use std::io::Read;
@@ -424,53 +425,60 @@ fn main() -> Result<(), Box<dyn Error>> {
             let terms_stem = stem_vec(terms.clone());
             // TODO remove duplicate search terms if supplied
 
-            // search for all terms and print
-            let results_all = match snip::search_index_terms(&conn, &terms_stem) {
-                Ok(v) => v,
-                Err(_) => {
-                    eprintln!("no matches");
-                    return Ok(());
-                },
-            };
-
-            for term in terms_stem.iter() {
-                for results in results_all.get(term).ok_or("error parsing results from hashmap")? {
-                    let id = results.0;
-                    let positions_all = results.1.clone();
-
-                    // retrieve and analyze document to obtain context
-                    let mut s = snip::get_from_uuid(&conn, &id)?;
-                    s.analyze()?;
-                    println!("{}", s.name);
-                    println!("  {} [{}: {}]", snip::split_uuid(&s.uuid)[0], term, positions_all.len());
-
-                    for pos in positions_all {
-                        // gather context indices and print them
-                        let context = s.analysis.get_term_context_positions(pos, 8);
-                        let position_first = context.first().ok_or("finding first context position")?;
-                        let position_last = context.last().ok_or("finding last context position")?;
-
-                        print!("    [{}-{}] \"", position_first, position_last);
-                        for (i, p) in context.iter().enumerate() {
-                            let snip_word = &s.analysis.words[*p];
-                            // check for matching word
-                            match &snip_word.stem {
-                                x if x.to_lowercase() == *term => print!("{}", snip_word.word.red()),
-                                _ => print!("{}", snip_word.word),
-                            }
-
-                            if let Some(suffix) = &snip_word.suffix {
-                                if i == context.len() - 1 { // do not print the final suffix
-                                    break;
-                                }
-                                // TODO remove repetitive whitespace to conform formatted text to search results
-                                print!("{}", suffix.replace('\n', " ")); // no newlines
-                            }
-                        }
-                        println!("\"");
+            let results = snip::search_all_present(&conn, terms_stem)?;
+            for (k, v) in results.items {
+                let mut s = snip::get_from_uuid(&conn, &k)?;
+                s.analyze()?;
+                println!("{}", s.name);
+                print!("  {}", snip::split_uuid(&s.uuid)[0]);
+                // create summary of terms and counts
+                let mut terms_summary: HashMap<String, usize> = HashMap::new();
+                for t in &v {
+                    for m in t.matches.clone() {
+                        terms_summary.insert(m.0, m.1.len());
                     }
-                    println!();
                 }
+                // print!(" {:?} ", terms_summary);
+                print!(" [");
+                for (i, (k, v)) in terms_summary.iter().enumerate() {
+                    print!("{}: {}", k, v);
+                    if i != terms_summary.len() - 1 {
+                        print!(" ");
+                    }
+                }
+                print!("]");
+                println!();
+
+                for item in v {
+                    for (term, positions) in item.matches {
+                        for pos in positions {
+                            // gather context indices and print them
+                            let context = s.analysis.get_term_context_positions(pos, 8);
+                            let position_first = context.first().ok_or("finding first context position")?;
+                            let position_last = context.last().ok_or("finding last context position")?;
+
+                            print!("    [{}-{}] \"", position_first, position_last);
+                            for (i, p) in context.iter().enumerate() {
+                                let snip_word = &s.analysis.words[*p];
+                                // check for matching word
+                                match &snip_word.stem {
+                                    x if x.to_lowercase() == *term => print!("{}", snip_word.word.red()),
+                                    _ => print!("{}", snip_word.word),
+                                }
+
+                                if let Some(suffix) = &snip_word.suffix {
+                                    if i == context.len() - 1 { // do not print the final suffix
+                                        break;
+                                    }
+                                    // TODO remove repetitive whitespace to conform formatted text to search results
+                                    print!("{}", suffix.replace('\n', " ")); // no newlines
+                                }
+                            }
+                            println!("\"");
+                        }
+                    }
+                }
+                println!();
             }
 
             /*

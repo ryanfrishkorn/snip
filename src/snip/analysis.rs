@@ -17,12 +17,51 @@ pub struct AnalysisStats {
     pub terms_with_counts: Vec<(String, u64)>,
 }
 
+#[derive(Debug)]
+pub struct SearchResult {
+    pub items: HashMap<Uuid, Vec<SearchResultItem>>
+}
+
+#[derive(Debug)]
+pub struct SearchResultItem {
+    pub matches: HashMap<String, Vec<usize>>, // <term, Vec<positions>
+}
+
 #[derive(Clone, Debug)]
-pub struct SearchTermResult {
+pub struct SearchResultTerm {
     pub uuid: Uuid,
     pub term: String,
     pub positions: Vec<usize>,
 }
+
+/// Data structure layout for convenient output with context
+///
+/// Latin Sample Text
+///   c908e14c [lorem: 2, ipsum: 1]
+///     [0-8] "Lorem of the sea and the..."
+///     [21-29] "Lorem ipsum of the sea and the..."
+///
+/// This output will require these structs
+///
+/// Vec<SearchResult>
+///
+/// struct SearchResult {
+///     s: Snip,
+///     matches: HashMap<String, Vec<usize>> // (term, Vec<positions>)
+///     score: Option<f64>, // this way we can sort by score easily
+/// }
+///
+/// struct IndexResult {
+///     term: String,
+///     positions: Vec<usize>,
+/// }
+///
+/// The code will be similar to this:
+///
+/// for result in search_results {
+///     println!("{}", result.s.name);
+///     println!("  {} {:?}", result.s.uuid,
+/// }
 
 impl SnipAnalysis {
     /// get vector positions of desired context including term position
@@ -260,8 +299,8 @@ fn reduce_match_all(input: Vec<Vec<Uuid>>) -> Vec<Uuid> {
     results
 }
 
-fn reduce_match_all_terms(input: Vec<Vec<SearchTermResult>>) -> Vec<SearchTermResult> {
-    let mut results: Vec<SearchTermResult> = Vec::new();
+fn reduce_match_all_terms(input: Vec<Vec<SearchResultTerm>>) -> Vec<SearchResultTerm> {
+    let mut results: Vec<SearchResultTerm> = Vec::new();
     let matches_required = input.len();
 
     for term_results in &input {
@@ -290,11 +329,14 @@ fn reduce_match_all_terms(input: Vec<Vec<SearchTermResult>>) -> Vec<SearchTermRe
     results
 }
 
-pub fn search_all_present(conn: &Connection, terms: Vec<String>) -> Result<Vec<SearchTermResult>, Box<dyn Error>> {
-    let mut prelim_results: Vec<Vec<SearchTermResult>> = Vec::new();
+pub fn search_all_present(conn: &Connection, terms: Vec<String>) -> Result<SearchResult, Box<dyn Error>> {
+    let mut result = SearchResult {
+        items: HashMap::new(),
+    };
+
+    let mut result_prelim: Vec<SearchResultTerm> = Vec::new();
 
     for term in terms {
-        let mut term_result: Vec<SearchTermResult> = Vec::new();
         let mut stmt = conn.prepare("SELECT uuid, positions FROM snip_index_rs WHERE term = :term")?;
         let query_iter = stmt.query_map(&[
             (":term", &term),
@@ -306,16 +348,28 @@ pub fn search_all_present(conn: &Connection, terms: Vec<String>) -> Result<Vec<S
         for id_str in query_iter.flatten() {
             let uuid = Uuid::try_parse(id_str.0.as_str())?;
             let positions: Vec<usize> = id_str.1.split(',').map(|x| x.parse::<usize>().expect("parsing positions from db string")).collect();
-            term_result.push(SearchTermResult{
+            result_prelim.push(SearchResultTerm{
                 uuid,
                 term: term.clone(),
                 positions,
             });
         }
-        prelim_results.push(term_result);
     }
-    let results = reduce_match_all_terms(prelim_results);
-    Ok(results)
+
+    // add all matches to result hashmap
+    for rt in result_prelim {
+        let mut item = SearchResultItem {
+            matches: HashMap::new(),
+        };
+        item.matches.insert(rt.term, rt.positions);
+
+        // add to final results
+        if result.items.get(&rt.uuid).is_none() {
+            result.items.insert(rt.uuid, Vec::new());
+        }
+        result.items.get_mut(&rt.uuid).unwrap().push(item); // FIXME - no unwrap
+    }
+    Ok(result)
 }
 
 /// Searches the database index returning UUIDs that match supplied terms
@@ -433,39 +487,39 @@ mod tests {
 
     #[test]
     fn test_reduce_match_all_terms() -> Result<(), Box<dyn Error>> {
-        // reduce_match_all_terms(input: Vec<Vec<SearchTermResult>>) -> Vec<SearchTermResult> {
-        let a = SearchTermResult {
+        // reduce_match_all_terms(input: Vec<Vec<SearchResultTerm>>) -> Vec<SearchResultTerm> {
+        let a = SearchResultTerm {
             uuid: Uuid::try_parse("00000000-0000-0000-0000-000000000000").unwrap(),
             term: "lorem".to_string(),
             positions: vec![0, 1, 2],
         };
-        let b = SearchTermResult {
+        let b = SearchResultTerm {
             uuid: Uuid::try_parse("00000000-0000-0000-0000-000000000001").unwrap(),
             term: "lorem".to_string(),
             positions: vec![0, 1, 2],
         };
-        let c = SearchTermResult {
+        let c = SearchResultTerm {
             uuid: Uuid::try_parse("00000000-0000-0000-0000-000000000002").unwrap(),
             term: "lorem".to_string(),
             positions: vec![0, 1, 2],
         };
-        let d = SearchTermResult {
+        let d = SearchResultTerm {
             uuid: Uuid::try_parse("00000000-0000-0000-0000-000000000003").unwrap(),
             term: "lorem".to_string(),
             positions: vec![0, 1, 2],
         };
-        let e = SearchTermResult {
+        let e = SearchResultTerm {
             uuid: Uuid::try_parse("00000000-0000-0000-0000-000000000004").unwrap(),
             term: "lorem".to_string(),
             positions: vec![0, 1, 2],
         };
-        let f = SearchTermResult {
+        let f = SearchResultTerm {
             uuid: Uuid::try_parse("00000000-0000-0000-0000-000000000005").unwrap(),
             term: "lorem".to_string(),
             positions: vec![0, 1, 2],
         };
 
-        let input: Vec<Vec<SearchTermResult>> = vec![
+        let input: Vec<Vec<SearchResultTerm>> = vec![
             vec![
                 a.clone(), b.clone(), c.clone(), d.clone(), e.clone(), f.clone(),
             ],
@@ -477,7 +531,7 @@ mod tests {
             ],
         ];
 
-        let expect: Vec<SearchTermResult> = vec![a, c];
+        let expect: Vec<SearchResultTerm> = vec![a, c];
         let result = reduce_match_all_terms(input);
         // println!("expect: {:#?}", expect);
         println!("result: {:#?}", result);
@@ -487,6 +541,29 @@ mod tests {
                 panic!("failed integrity check");
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_search_all_present() -> Result<(), Box<dyn Error>> {
+        let conn = prepare_database().expect("preparing in-memory database");
+        snip::index_all_items(&conn)?;
+
+        let stemmer = rust_stemmers::Stemmer::create(rust_stemmers::Algorithm::English);
+
+        let terms: Vec<String> = vec!["lorem".to_string(), "ipsum".to_string(), "dolor".to_string()];
+        let stems: Vec<String> = terms.iter().map(|w| stemmer.stem(w).to_string()).collect();
+        let result = search_all_present(&conn, stems)?;
+
+        println!("number of results: {}", result.items.len());
+        println!("{:#?}", result);
+        /*
+        for (k, v) in result.items {
+            let s = snip::get_from_uuid(&conn, &k)?;
+            println!("{} {}", s.uuid, s.name);
+            println!("  {:#?}", v);
+        }
+         */
         Ok(())
     }
 
