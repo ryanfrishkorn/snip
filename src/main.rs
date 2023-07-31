@@ -476,8 +476,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                         break;
                                     }
                                     // TODO remove repetitive whitespace to conform formatted text to search results
-                                    print!("{}", suffix.replace(['\n', '\r'], " ")); // no newlines
-                                    // print!("{}", suffix.replace(['\n', '\r', char::from_u32(0x0au32).unwrap()], " "));
+                                    print!("{}", suffix.replace(['\n', '\r', char::from_u32(0x0au32).unwrap()], " ")); // no newlines, etc
                                 }
                             }
                             println!("\"");
