@@ -1,14 +1,13 @@
-mod doc;
 mod analysis;
 mod attachment;
+mod doc;
 mod error;
+mod search;
 mod test_prep;
 
-pub use doc::*;
-pub use doc::Snip;
 pub use analysis::*;
-pub use analysis::{SnipAnalysis, SnipWord, WordIndex};
 pub use attachment::*;
-pub use attachment::Attachment;
+pub use doc::*;
 pub use error::SnipError;
+pub use search::*;
 pub use test_prep::*;

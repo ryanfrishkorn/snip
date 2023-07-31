@@ -421,7 +421,7 @@ pub fn read_lines_from_stdin() -> Result<String, Box<dyn Error>> {
 
 /// Remove a document matching given uuid
 pub fn remove_snip(conn: &Connection, id: Uuid) -> Result<(), Box<dyn Error>> {
-    let mut s = snip::get_from_uuid(conn, &id)?;
+    let mut s = get_from_uuid(conn, &id)?;
     // collect and remove attachments
     s.collect_attachments(conn)?;
     for a in s.attachments {

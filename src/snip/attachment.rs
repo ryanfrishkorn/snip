@@ -81,7 +81,7 @@ pub fn add_attachment(conn: &Connection, snip_uuid: Uuid, path: &Path) -> Result
     let timestamp_utc = chrono::Utc::now();
     let timestamp = timestamp_utc.fixed_offset();
     let name = path.file_name().ok_or("parsing attachment basename")?.to_string_lossy().to_string();
-    let data = std::fs::read(path)?;
+    let data = fs::read(path)?;
     let size = data.len();
 
     // assign new Attachment
