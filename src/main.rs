@@ -451,9 +451,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                 for item in v {
                     for (term, positions) in item.matches {
-                        for pos in positions {
+                        let position_limit = 5;
+                        for (i, pos) in positions.iter().enumerate() {
+                            if i != 0 && i == position_limit {
+                                eprintln!("    ...additional results: {}", positions.len() - i);
+                                break;
+                            }
                             // gather context indices and print them
-                            let context = s.analysis.get_term_context_positions(pos, 8);
+                            let context = s.analysis.get_term_context_positions(*pos, 8);
                             let position_first = context.first().ok_or("finding first context position")?;
                             let position_last = context.last().ok_or("finding last context position")?;
 
@@ -471,7 +476,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                                         break;
                                     }
                                     // TODO remove repetitive whitespace to conform formatted text to search results
-                                    print!("{}", suffix.replace('\n', " ")); // no newlines
+                                    print!("{}", suffix.replace(['\n', '\r'], " ")); // no newlines
+                                    // print!("{}", suffix.replace(['\n', '\r', char::from_u32(0x0au32).unwrap()], " "));
                                 }
                             }
                             println!("\"");
