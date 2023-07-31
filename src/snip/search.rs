@@ -274,7 +274,6 @@ pub fn search_uuid(conn: &Connection, id_partial: &str) -> Result<Uuid, Box<dyn 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use std::error::Error;
     use uuid::Uuid;
     use crate::snip;
@@ -396,19 +395,8 @@ mod tests {
     fn test_search_uuid() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database().expect("preparing in-memory database");
 
-        let partials: HashMap<String, String> = HashMap::from([
-            // ba652e2d-b248-4bcc-b36e-c26c0d0e8002
-            (ID_STR[0..8].to_string(), "segment 1".to_string()), // ba652e2d
-            (ID_STR[9..13].to_string(), "segment 2".to_string()), // _________b248
-            (ID_STR[14..18].to_string(), "segment 3".to_string()), // ______________4bbc
-            (ID_STR[19..23].to_string(), "segment 4".to_string()), // ___________________b36e
-            (ID_STR[24..].to_string(), "segment 5".to_string()), // ________________________c26c0d0e8002
-            (ID_STR[7..12].to_string(), "partial 1".to_string()), // _______d-b24
-            (ID_STR[7..14].to_string(), "partial 2".to_string()), // _______d-b248-
-            (ID_STR[7..15].to_string(), "partial 3".to_string()), // _______d-b248-4
-            (ID_STR[8..19].to_string(), "partial 4".to_string()), // ________-b248-4bcc-
-            (ID_STR[23..].to_string(), "partial 5".to_string()), // _______________________-c26c0d0e8002
-        ]);
+        let id = Uuid::try_parse(ID_STR)?;
+        let partials = fragment_uuid(id);
 
         /*
         println!("ba652e2d-b248-4bcc-b36e-c26c0d0e8002");

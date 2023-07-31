@@ -1,5 +1,7 @@
 use rusqlite::{Connection, DatabaseName};
+use std::collections::HashMap;
 use std::error::Error;
+use uuid::Uuid;
 use crate::snip;
 
 pub const ID_STR: &str = "ba652e2d-b248-4bcc-b36e-c26c0d0e8002";
@@ -74,4 +76,23 @@ pub fn import_snip_data(conn: &Connection) -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
+}
+
+pub fn fragment_uuid(id: Uuid) -> HashMap<String, String> {
+    let id_str = id.to_string();
+    let partials: HashMap<String, String> = HashMap::from([
+        /*                                                  */ // ba652e2d-b248-4bcc-b36e-c26c0d0e8002
+        (id_str[0..8].to_string(), "segment 1".to_string()),   // ba652e2d
+        (id_str[9..13].to_string(), "segment 2".to_string()),  // _________b248
+        (id_str[14..18].to_string(), "segment 3".to_string()), // ______________4bbc
+        (id_str[19..23].to_string(), "segment 4".to_string()), // ___________________b36e
+        (id_str[24..].to_string(), "segment 5".to_string()),   // ________________________c26c0d0e8002
+        (id_str[7..12].to_string(), "partial 1".to_string()),  // _______d-b24
+        (id_str[7..14].to_string(), "partial 2".to_string()),  // _______d-b248-
+        (id_str[7..15].to_string(), "partial 3".to_string()),  // _______d-b248-4
+        (id_str[8..19].to_string(), "partial 4".to_string()),  // ________-b248-4bcc-
+        (id_str[23..].to_string(), "partial 5".to_string()),   // _______________________-c26c0d0e8002
+    ]);
+
+    partials
 }
