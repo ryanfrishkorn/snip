@@ -1,7 +1,6 @@
 pub mod snip;
 
 use clap::{Arg, ArgAction, Command};
-use colored::*;
 use rusqlite::{Connection, OpenFlags, Result};
 use rust_stemmers::{Algorithm, Stemmer};
 use snip::{Snip, SnipAnalysis, SnipError};
@@ -423,7 +422,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let terms: Vec<String> = args.map(|x| x.to_owned()).collect();
             let terms_stem = stem_vec(terms.clone());
 
-            // remove duplicate search terms if supplied
+            // filter out duplicate search terms if present
             let mut seen_terms: Vec<String> = Vec::new();
             let terms_stem_unique: Vec<String> = terms_stem.into_iter().filter(|x| {
                 if seen_terms.contains(x) {
@@ -433,23 +432,24 @@ fn main() -> Result<(), Box<dyn Error>> {
                 true
             }).collect();
 
-            let results = snip::search_all_present(&conn, terms_stem_unique)?;
-            for (k, v) in results.items {
-                let mut s = snip::get_from_uuid(&conn, &k)?;
+            // perform search and print summary
+            let search_results = snip::search_all_present(&conn, terms_stem_unique)?;
+            for (id, search_result_item) in search_results.items {
+                let mut s = snip::get_from_uuid(&conn, &id)?;
                 s.analyze()?;
                 println!("{}", s.name);
                 print!("  {}", snip::split_uuid(&s.uuid)[0]);
 
                 // create and print a summary of terms and counts
                 let mut terms_summary: HashMap<String, usize> = HashMap::new();
-                for t in &v {
+                for t in &search_result_item {
                     for m in t.matches.clone() {
                         terms_summary.insert(m.0, m.1.len());
                     }
                 }
                 print!(" [");
-                for (i, (k, v)) in terms_summary.iter().enumerate() {
-                    print!("{}: {}", k, v);
+                for (i, (id, search_result_item)) in terms_summary.iter().enumerate() {
+                    print!("{}: {}", id, search_result_item);
                     if i != terms_summary.len() - 1 {
                         print!(" ");
                     }
@@ -458,38 +458,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                 println!();
 
                 // for each position, gather context and display
-                for item in v {
+                for item in search_result_item {
                     for (_, positions) in item.matches {
                         let position_limit = 5;
                         for (i, pos) in positions.iter().enumerate() {
                             // if limit is hit, show the additional match count
                             if i != 0 && i == position_limit {
-                                eprintln!("    ...additional results: {}", positions.len() - i);
+                                eprintln!("    ...additional matches: {}", positions.len() - i);
                                 break;
                             }
 
                             // this gathers an excerpt from the supplied position
                             let excerpt = s.analysis.get_excerpt(pos)?;
-
-                            // print word positions
-                            print!("    [{}-{}] ", excerpt.position_first, excerpt.position_last);
-                            print!("\"");
-                            for (i, term) in excerpt.terms.iter().enumerate() {
-                                // highlight if appropriate
-                                match term.highlight {
-                                    true => print!("{}", term.term.red()),
-                                    false => print!("{}", term.term),
-                                };
-
-                                // trim end whitespace on the final suffix, to look clean and preserve punctuation
-                                if i == excerpt.terms.len() - 1 {
-                                    print!("{}", term.suffix_clean.trim_end());
-                                } else {
-                                    print!("{}", term.suffix_clean);
-                                }
-                            }
-                            print!("\"");
-                            println!();
+                            // print_excerpt(&excerpt);
+                            excerpt.print();
                         }
                     }
                 }

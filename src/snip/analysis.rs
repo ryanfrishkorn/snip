@@ -1,3 +1,4 @@
+use colored::*;
 use std::error::Error;
 use rusqlite::Connection;
 use unicode_segmentation::UnicodeSegmentation;
@@ -21,6 +22,30 @@ pub struct Excerpt {
     pub position_last: usize,
     pub positions: Vec<usize>,
     pub terms: Vec<ExcerptTerm>,
+}
+
+impl Excerpt {
+    /// Prints the formatted document excerpt
+    pub fn print(&self) {
+        print!("    [{}-{}] ", self.position_first, self.position_last);
+        print!("\"");
+        for (i, term) in self.terms.iter().enumerate() {
+            // highlight if appropriate
+            match term.highlight {
+                true => print!("{}", term.term.red()),
+                false => print!("{}", term.term),
+            };
+
+            // trim end whitespace on the final suffix, to look clean and preserve punctuation
+            if i == self.terms.len() - 1 {
+                print!("{}", term.suffix_clean.trim_end());
+            } else {
+                print!("{}", term.suffix_clean);
+            }
+        }
+        print!("\"");
+        println!();
+    }
 }
 
 #[derive(Debug)]

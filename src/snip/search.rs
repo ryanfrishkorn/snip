@@ -6,11 +6,11 @@ use crate::snip::SnipError;
 
 #[derive(Debug)]
 pub struct SearchResult {
-    pub items: HashMap<Uuid, Vec<SearchResultItem>>
+    pub items: HashMap<Uuid, Vec<SearchTermPositions>>
 }
 
 #[derive(Debug)]
-pub struct SearchResultItem {
+pub struct SearchTermPositions {
     pub matches: HashMap<String, Vec<usize>>, // <term, Vec<positions>
 }
 
@@ -215,7 +215,7 @@ pub fn search_all_present(conn: &Connection, terms: Vec<String>) -> Result<Searc
 
     // add all matches to result hashmap
     for rt in result_prelim {
-        let mut item = SearchResultItem {
+        let mut item = SearchTermPositions {
             matches: HashMap::new(),
         };
         item.matches.insert(rt.term, rt.positions);
