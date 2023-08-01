@@ -129,7 +129,7 @@ pub fn search_prototype(conn: &Connection, terms_positive: Vec<String>, _terms_n
 /// Reduce the input of vectors to a single vector of Uuids that are the intersection of all vectors
 ///
 /// Uuids must be unique in each vector
-fn reduce_match_all(input: Vec<Vec<Uuid>>) -> Vec<Uuid> {
+fn _reduce_match_all(input: Vec<Vec<Uuid>>) -> Vec<Uuid> {
     let mut results: Vec<Uuid> = Vec::new();
     let matches_required = input.len();
 
@@ -156,7 +156,7 @@ fn reduce_match_all(input: Vec<Vec<Uuid>>) -> Vec<Uuid> {
     results
 }
 
-fn reduce_match_all_terms(input: Vec<Vec<SearchResultTerm>>) -> Vec<SearchResultTerm> {
+fn _reduce_match_all_terms(input: Vec<Vec<SearchResultTerm>>) -> Vec<SearchResultTerm> {
     let mut results: Vec<SearchResultTerm> = Vec::new();
     let matches_required = input.len();
 
@@ -301,7 +301,7 @@ mod tests {
         ];
 
         let expect: Vec<Uuid> = vec![a, c, f];
-        let reduced = reduce_match_all(input);
+        let reduced = _reduce_match_all(input);
         if expect != reduced {
             panic!("expected {:?} got {:?}", expect, reduced);
         }
@@ -356,7 +356,7 @@ mod tests {
         ];
 
         let expect: Vec<SearchResultTerm> = vec![a, c];
-        let result = reduce_match_all_terms(input);
+        let result = _reduce_match_all_terms(input);
         // println!("expect: {:#?}", expect);
         println!("result: {:#?}", result);
 
