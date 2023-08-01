@@ -476,7 +476,23 @@ fn main() -> Result<(), Box<dyn Error>> {
                                         break;
                                     }
                                     // TODO remove repetitive whitespace to conform formatted text to search results
-                                    print!("{}", suffix.replace(['\n', '\r', char::from_u32(0x0au32).unwrap()], " ")); // no newlines, etc
+                                    let output_stripped = suffix.replace(['\n', '\r', char::from_u32(0x0au32).unwrap()], " "); // no newlines, etc
+
+                                    let reduce_spaces = |x: String| -> String {
+                                        let mut output = String::new();
+                                        let mut last_grapheme: &str = "";
+                                        for g in x.graphemes(true) {
+                                            if g == " " && last_grapheme == " " {
+                                                // skip consecutive spaces
+                                                continue;
+                                            }
+                                            output = format!("{}{}", output, g);
+                                            last_grapheme = g;
+                                        }
+                                        output
+                                    };
+
+                                    print!("{}", reduce_spaces(output_stripped));
                                 }
                             }
                             println!("\"");
