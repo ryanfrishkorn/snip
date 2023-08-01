@@ -4,7 +4,7 @@ use clap::{Arg, ArgAction, Command};
 use colored::*;
 use rusqlite::{Connection, OpenFlags, Result};
 use rust_stemmers::{Algorithm, Stemmer};
-use snip::{Snip, SnipAnalysis};
+use snip::{Snip, SnipAnalysis, SnipError};
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
@@ -12,7 +12,6 @@ use std::io::Read;
 use std::path::Path;
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
-use snip_rs::SnipError;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let cmd = Command::new("snip-rs")
@@ -440,14 +439,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                 s.analyze()?;
                 println!("{}", s.name);
                 print!("  {}", snip::split_uuid(&s.uuid)[0]);
-                // create summary of terms and counts
+
+                // create and print a summary of terms and counts
                 let mut terms_summary: HashMap<String, usize> = HashMap::new();
                 for t in &v {
                     for m in t.matches.clone() {
                         terms_summary.insert(m.0, m.1.len());
                     }
                 }
-                // print!(" {:?} ", terms_summary);
                 print!(" [");
                 for (i, (k, v)) in terms_summary.iter().enumerate() {
                     print!("{}: {}", k, v);
@@ -458,53 +457,39 @@ fn main() -> Result<(), Box<dyn Error>> {
                 print!("]");
                 println!();
 
+                // for each position, gather context and display
                 for item in v {
-                    for (term, positions) in item.matches {
+                    for (_, positions) in item.matches {
                         let position_limit = 5;
                         for (i, pos) in positions.iter().enumerate() {
+                            // if limit is hit, show the additional match count
                             if i != 0 && i == position_limit {
                                 eprintln!("    ...additional results: {}", positions.len() - i);
                                 break;
                             }
-                            // gather context indices and print them
-                            let context = s.analysis.get_term_context_positions(*pos, 8);
-                            let position_first = context.first().ok_or("finding first context position")?;
-                            let position_last = context.last().ok_or("finding last context position")?;
 
-                            print!("    [{}-{}] \"", position_first, position_last);
-                            for (i, p) in context.iter().enumerate() {
-                                let snip_word = &s.analysis.words[*p];
-                                // check for matching word
-                                match &snip_word.stem {
-                                    x if x.to_lowercase() == *term => print!("{}", snip_word.word.red()),
-                                    _ => print!("{}", snip_word.word),
-                                }
+                            // this gathers an excerpt from the supplied position
+                            let excerpt = s.analysis.get_excerpt(pos)?;
 
-                                if let Some(suffix) = &snip_word.suffix {
-                                    if i == context.len() - 1 { // do not print the final suffix
-                                        break;
-                                    }
-                                    // TODO remove repetitive whitespace to conform formatted text to search results
-                                    let output_stripped = suffix.replace(['\n', '\r', char::from_u32(0x0au32).unwrap()], " "); // no newlines, etc
+                            // print word positions
+                            print!("    [{}-{}] ", excerpt.position_first, excerpt.position_last);
+                            print!("\"");
+                            for (i, term) in excerpt.terms.iter().enumerate() {
+                                // highlight if appropriate
+                                match term.highlight {
+                                    true => print!("{}", term.term.red()),
+                                    false => print!("{}", term.term),
+                                };
 
-                                    let reduce_spaces = |x: String| -> String {
-                                        let mut output = String::new();
-                                        let mut last_grapheme: &str = "";
-                                        for g in x.graphemes(true) {
-                                            if g == " " && last_grapheme == " " {
-                                                // skip consecutive spaces
-                                                continue;
-                                            }
-                                            output = format!("{}{}", output, g);
-                                            last_grapheme = g;
-                                        }
-                                        output
-                                    };
-
-                                    print!("{}", reduce_spaces(output_stripped));
+                                // trim end whitespace on the final suffix, to look clean and preserve punctuation
+                                if i == excerpt.terms.len() - 1 {
+                                    print!("{}", term.suffix_clean.trim_end());
+                                } else {
+                                    print!("{}", term.suffix_clean);
                                 }
                             }
-                            println!("\"");
+                            print!("\"");
+                            println!();
                         }
                     }
                 }

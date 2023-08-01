@@ -1,5 +1,6 @@
 use std::error::Error;
 use rusqlite::Connection;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// Analysis of the document derived from
 #[derive(Debug)]
@@ -14,6 +15,23 @@ pub struct AnalysisStats {
     pub terms_with_counts: Vec<(String, u64)>,
 }
 
+#[derive(Debug)]
+pub struct Excerpt {
+    pub position_first: usize,
+    pub position_last: usize,
+    pub positions: Vec<usize>,
+    pub terms: Vec<ExcerptTerm>,
+}
+
+#[derive(Debug)]
+pub struct ExcerptTerm {
+    pub stem: String,
+    pub term: String,
+    pub highlight: bool,
+    pub range_prefix: (usize, usize),
+    pub suffix_clean: String,
+}
+
 /// Represents a word in the document, along with meta information derived from document analysis
 #[derive(Debug)]
 pub struct SnipWord {
@@ -25,8 +43,53 @@ pub struct SnipWord {
 }
 
 impl SnipAnalysis {
+    pub fn get_excerpt(&self, pos: &usize) -> Result<Excerpt, Box<dyn Error>> {
+        let term = &self.words[*pos].stem;
+        let mut excerpt = Excerpt {
+            position_first: 0,
+            position_last: 0,
+            positions: Vec::new(),
+            terms: Vec::new(),
+        };
+
+        // gather context indices and print them
+        let positions = self.get_term_context_positions(*pos, 8);
+        let position_first = positions.first().ok_or("finding first context position")?;
+        let position_last = positions.last().ok_or("finding last context position")?;
+        excerpt.position_first = *position_first;
+        excerpt.position_last = *position_last;
+
+        for (i, p) in positions.iter().enumerate() {
+            excerpt.positions.push(*p);
+            let snip_word = &self.words[*p];
+            let mut excerpt_term = ExcerptTerm {
+                stem: snip_word.stem.clone(),
+                term: snip_word.word.clone(),
+                highlight: false,
+                range_prefix: (*position_first, *position_last),
+                suffix_clean: String::new(),
+            };
+            // check for matching word
+            if snip_word.stem == *term {
+                excerpt_term.highlight = true;
+            }
+
+            if let Some(suffix) = &snip_word.suffix {
+                if i == positions.len() - 1 { // do not print the final suffix
+                    // break;
+                }
+                let suffix_stripped = suffix.replace(['\n', '\r', char::from_u32(0x0au32).unwrap()], " "); // no newlines, etc
+                // remove repetitive whitespace to conform formatted text to search results
+                excerpt_term.suffix_clean = collapse_spaces(suffix_stripped);
+            }
+
+            excerpt.terms.push(excerpt_term);
+        }
+        Ok(excerpt)
+    }
+
     /// get vector positions of desired context including term position
-    pub fn get_term_context_positions(&self, position: usize, count: usize) -> Vec<usize> {
+    fn get_term_context_positions(&self, position: usize, count: usize) -> Vec<usize> {
         let mut context: Vec<usize> = Vec::new();
         let mut context_prefix: Vec<usize> = Vec::new();
         let mut context_suffix: Vec<usize> = Vec::new();
@@ -97,6 +160,21 @@ impl WordIndex {
         }
         Ok(output)
     }
+}
+
+/// Collapse recurring space characters in a string
+fn collapse_spaces(s: String) -> String {
+    let mut output = String::new();
+    let mut last_grapheme: &str = "";
+    for g in s.graphemes(true) {
+        if g == " " && last_grapheme == " " {
+            // skip consecutive spaces
+            continue;
+        }
+        output = format!("{}{}", output, g);
+        last_grapheme = g;
+    }
+    output
 }
 
 /// provide stats about the document and index
