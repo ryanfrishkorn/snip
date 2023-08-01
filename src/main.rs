@@ -142,9 +142,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         )
         .subcommand(
             Command::new("search")
-                .about("Search for terms")
+                .about("Search for terms within all documents")
                 .arg_required_else_help(true)
-                .arg(Arg::new("terms").action(ArgAction::Append).required(true)),
+                .arg(
+                    Arg::new("terms")
+                        .action(ArgAction::Append)
+                        .required(true)
+                )
+                .arg(
+                    Arg::new("match-limit")
+                        .help("limit the number of match excerpts displayed")
+                        .long("match-limit")
+                        .num_args(1)
+                        .action(ArgAction::Append)
+                )
         )
         .subcommand(
             Command::new("split")
@@ -432,6 +443,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 true
             }).collect();
 
+            // establish match limit
+            let mut excerpt_limit = 0;
+            if let Some(limit) = sub_matches.get_one::<String>("match-limit") {
+                excerpt_limit = limit.parse::<usize>()?;
+            }
+
             // perform search and print summary
             let search_results = snip::search_all_present(&conn, terms_stem_unique)?;
             for (id, search_result_item) in search_results.items {
@@ -460,10 +477,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 // for each position, gather context and display
                 for item in search_result_item {
                     for (_, positions) in item.matches {
-                        let position_limit = 5;
                         for (i, pos) in positions.iter().enumerate() {
                             // if limit is hit, show the additional match count
-                            if i != 0 && i == position_limit {
+                            if i != 0 && i == excerpt_limit {
                                 println!("    ...additional matches: {}", positions.len() - i);
                                 break;
                             }
