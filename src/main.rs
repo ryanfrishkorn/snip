@@ -568,5 +568,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn stem_vec(words: Vec<String>) -> Vec<String> {
     let stemmer = Stemmer::create(Algorithm::English);
-    words.iter().map(|w| stemmer.stem(w).to_string()).collect()
+    words.iter()
+        .map(|w| w.to_lowercase())
+        .map(|w| stemmer.stem(w.as_str()).to_string())
+        .collect()
 }
