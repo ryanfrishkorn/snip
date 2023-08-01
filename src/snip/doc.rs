@@ -208,8 +208,10 @@ impl Snip {
             }
         }
 
-        // assign last suffix
-        self.analysis.words[prefixes.len() - 1].suffix = suffix;
+        // assign last suffix unless the index is zero (which would underflow)
+        if prefixes.len() != 0 {
+            self.analysis.words[prefixes.len() - 1].suffix = suffix;
+        }
         Ok(())
     }
 

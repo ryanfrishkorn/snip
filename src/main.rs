@@ -464,7 +464,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         for (i, pos) in positions.iter().enumerate() {
                             // if limit is hit, show the additional match count
                             if i != 0 && i == position_limit {
-                                eprintln!("    ...additional matches: {}", positions.len() - i);
+                                println!("    ...additional matches: {}", positions.len() - i);
                                 break;
                             }
 
