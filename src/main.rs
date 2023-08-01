@@ -423,9 +423,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         if let Some(args) = sub_matches.get_many::<String>("terms") {
             let terms: Vec<String> = args.map(|x| x.to_owned()).collect();
             let terms_stem = stem_vec(terms.clone());
-            // TODO remove duplicate search terms if supplied
 
-            let results = snip::search_all_present(&conn, terms_stem)?;
+            // remove duplicate search terms if supplied
+            let mut seen_terms: Vec<String> = Vec::new();
+            let terms_stem_unique: Vec<String> = terms_stem.into_iter().filter(|x| {
+                if seen_terms.contains(x) {
+                    return false;
+                }
+                seen_terms.push(x.clone());
+                true
+            }).collect();
+
+            let results = snip::search_all_present(&conn, terms_stem_unique)?;
             for (k, v) in results.items {
                 let mut s = snip::get_from_uuid(&conn, &k)?;
                 s.analyze()?;
