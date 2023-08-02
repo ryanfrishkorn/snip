@@ -68,7 +68,7 @@ pub struct SnipWord {
 }
 
 impl SnipAnalysis {
-    pub fn get_excerpt(&self, pos: &usize) -> Result<Excerpt, Box<dyn Error>> {
+    pub fn get_excerpt(&self, pos: &usize, context_words: usize) -> Result<Excerpt, Box<dyn Error>> {
         let term = &self.words[*pos].stem;
         let mut excerpt = Excerpt {
             position_first: 0,
@@ -78,7 +78,7 @@ impl SnipAnalysis {
         };
 
         // gather context indices and print them
-        let positions = self.get_term_context_positions(*pos, 8);
+        let positions = self.get_term_context_positions(*pos, context_words);
         let position_first = positions.first().ok_or("finding first context position")?;
         let position_last = positions.last().ok_or("finding last context position")?;
         excerpt.position_first = *position_first;

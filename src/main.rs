@@ -145,16 +145,24 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .about("Search for terms within all documents")
                 .arg_required_else_help(true)
                 .arg(
-                    Arg::new("terms")
-                        .action(ArgAction::Append)
-                        .required(true)
-                )
-                .arg(
                     Arg::new("match-limit")
                         .help("limit the number of match excerpts displayed")
                         .long("match-limit")
                         .num_args(1)
                         .action(ArgAction::Append)
+                )
+                .arg(
+                    Arg::new("context")
+                        .help("number of surrounding context words displayed")
+                        .long("context")
+                        .num_args(1)
+                        .required(false)
+                        .action(ArgAction::Append)
+                )
+                .arg(
+                    Arg::new("terms")
+                        .action(ArgAction::Append)
+                        .required(true)
                 )
         )
         .subcommand(
@@ -449,6 +457,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 excerpt_limit = limit.parse::<usize>()?;
             }
 
+            // establish number of surrounding context words to display
+            let mut context_words = 6;
+            if let Some(context) = sub_matches.get_one::<String>("context") {
+                context_words = context.parse::<usize>()?;
+            }
+
             // perform search and print summary
             let search_results = snip::search_all_present(&conn, terms_stem_unique)?;
             for (id, search_result_item) in search_results.items {
@@ -485,7 +499,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             }
 
                             // this gathers an excerpt from the supplied position
-                            let excerpt = s.analysis.get_excerpt(pos)?;
+                            let excerpt = s.analysis.get_excerpt(pos, context_words)?;
                             // print_excerpt(&excerpt);
                             excerpt.print();
                         }
