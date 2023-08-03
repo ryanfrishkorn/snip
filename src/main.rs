@@ -28,8 +28,18 @@ fn main() -> Result<(), Box<dyn Error>> {
             Command::new("add")
                 .about("Add new snip to database")
                 .arg_required_else_help(false)
-                .arg(Arg::new("file").short('f').long("file").num_args(1))
-                .arg(Arg::new("name").short('n').long("name").num_args(1)),
+                .arg(Arg::new("file")
+                    .help("document text from file")
+                    .short('f')
+                    .long("file")
+                    .num_args(1)
+                )
+                .arg(Arg::new("name")
+                    .help("name of new document")
+                    .short('n')
+                    .long("name")
+                    .num_args(1)
+                ),
         )
         .subcommand(
             Command::new("attach")
@@ -54,18 +64,21 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .arg_required_else_help(false)
                         .arg(
                             Arg::new("long")
+                                .help("display full uuid")
                                 .short('l')
                                 .num_args(0)
                                 .action(ArgAction::SetTrue),
                         )
                         .arg(
                             Arg::new("size")
+                                .help("display size in bytes")
                                 .short('s')
                                 .num_args(0)
                                 .action(ArgAction::SetTrue),
                         )
                         .arg(
                             Arg::new("time")
+                                .help("display timestamp")
                                 .short('t')
                                 .num_args(0)
                                 .action(ArgAction::SetTrue),
@@ -77,6 +90,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .arg_required_else_help(true)
                         .arg(
                             Arg::new("uuids")
+                                .help("partial/full uuids of documents to remove")
                                 .action(ArgAction::Append)
                         )
                 )
@@ -102,6 +116,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .arg(Arg::new("uuid"))
                 .arg(
                     Arg::new("analyze")
+                        .help("print analyzed document text")
                         .long("analyze")
                         .short('a')
                         .num_args(0)
@@ -109,6 +124,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 )
                 .arg(
                     Arg::new("raw")
+                        .help("print raw document text only (no headers)")
                         .long("raw")
                         .short('r')
                         .num_args(0)
@@ -125,12 +141,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .about("List snips")
                 .arg(
                     Arg::new("l")
+                        .help("display full uuid")
                         .short('l')
                         .num_args(0)
                         .action(ArgAction::SetTrue),
                 )
                 .arg(
-                    Arg::new("limit")
+                    Arg::new("number")
                         .help("number of documents to list")
                         .short('n')
                         .num_args(1)
@@ -138,6 +155,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 )
                 .arg(
                     Arg::new("t")
+                        .help("display timestamp")
                         .short('t')
                         .num_args(0)
                         .action(ArgAction::SetTrue),
@@ -155,7 +173,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .arg_required_else_help(true)
                 .arg(
                     Arg::new("exclude")
-                        .help("exclude the following terms")
+                        .help("exclude these comma delineated terms")
                         .short('x')
                         .long("exclude")
                         .value_delimiter(',')
@@ -446,7 +464,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             // check for limit
             let mut limit: usize = 0;
-            if let Some(v) = arg_matches.get_one::<String>("limit") {
+            if let Some(v) = arg_matches.get_one::<String>("number") {
                 limit = v.parse::<usize>()?;
             }
             list_snips(&conn, limit, arg_matches.get_flag("l"), arg_matches.get_flag("t"))
