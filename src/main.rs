@@ -146,6 +146,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .about("Search for terms within all documents")
                 .arg_required_else_help(true)
                 .arg(
+                    Arg::new("exclude")
+                        .help("exclude the following terms")
+                        .short('x')
+                        .long("exclude")
+                        .value_delimiter(',')
+                        .action(ArgAction::Append)
+                )
+                .arg(
                     Arg::new("match-limit")
                         .help("limit the number of match excerpts displayed")
                         .long("match-limit")
@@ -441,16 +449,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         if let Some(args) = sub_matches.get_many::<String>("terms") {
             let terms: Vec<String> = args.map(|x| x.to_owned()).collect();
             let terms_stem = stem_vec(terms.clone());
+            let mut terms_exclude: Vec<String> = Vec::new();
 
             // filter out duplicate search terms if present
             let mut seen_terms: Vec<String> = Vec::new();
-            let terms_stem_unique: Vec<String> = terms_stem.into_iter().filter(|x| {
+            let terms_include: Vec<String> = terms_stem.into_iter().filter(|x| {
                 if seen_terms.contains(x) {
                     return false;
                 }
                 seen_terms.push(x.clone());
                 true
             }).collect();
+
+            // exclusionary terms
+            if let Some(args) = sub_matches.get_many::<String>("exclude") {
+                terms_exclude = stem_vec(args.map(|x| x.to_owned()).collect());
+            }
 
             // establish match limit
             let mut excerpt_limit = 0;
@@ -466,8 +480,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             // perform search and print summary
             let search_query = SearchQuery {
-                terms_include: terms_stem_unique.clone(),
-                terms_exclude: vec![],
+                terms_include: terms_include.clone(),
+                terms_exclude: terms_exclude.clone(),
                 terms_optional: vec![],
                 method: SearchMethod::IndexStem,
             };
@@ -485,7 +499,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
                 print!(" [");
                 // use argument terms vector to order by term
-                for (i, term) in terms_stem_unique.iter().enumerate() {
+                for (i, term) in terms_include.iter().enumerate() {
                     if let Some(count) = terms_summary.get(term.as_str()) {
                         print!("{}: {}", term, count);
                         if i != terms_summary.len() -1 {
@@ -497,7 +511,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 println!();
 
                 // for each position, gather context and display
-                for term in &terms_stem_unique {
+                for term in &terms_include {
                     if let Some(positions) = item.matches.get(term.as_str()) {
                         for (i, pos) in positions.iter().enumerate() {
                             // if limit is hit, show the additional match count

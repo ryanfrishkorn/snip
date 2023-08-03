@@ -25,12 +25,6 @@ pub struct SearchQueryItem {
 }
 
 #[derive(Debug)]
-pub struct SearchQueryTerm {
-    pub term: String,
-    pub positions: Vec<usize>,
-}
-
-#[derive(Debug)]
 pub enum SearchMethod {
     IndexStem, // index of stemmed terms parsed from document text
     IndexWord, // index of unmodified words parsed from document text
