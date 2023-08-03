@@ -209,7 +209,7 @@ impl Snip {
         }
 
         // assign last suffix unless the index is zero (which would underflow)
-        if prefixes.len() != 0 {
+        if !prefixes.is_empty() {
             self.analysis.words[prefixes.len() - 1].suffix = suffix;
         }
         Ok(())
@@ -380,38 +380,6 @@ pub fn uuid_list(conn: &Connection) -> Result<Vec<Uuid>, Box<dyn Error>> {
     }
 
     Ok(ids)
-}
-
-/// Print a list of all documents in the database.
-pub fn list_snips(
-    conn: &Connection,
-    full_uuid: bool,
-    show_time: bool,
-) -> Result<(), Box<dyn Error>> {
-    let mut stmt = conn.prepare("SELECT uuid, timestamp, name, data from snip")?;
-
-    let rows = stmt.query_and_then([], |row| {
-        snip_from_db(row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)
-    })?;
-
-    for snip in rows {
-        let s = snip.unwrap();
-
-        // uuid
-        match full_uuid {
-            true => print!("{} ", s.uuid),
-            false => print!("{} ", split_uuid(&s.uuid)[0]),
-        }
-        // timestamp
-        if show_time {
-            print!("{} ", s.timestamp);
-        }
-        // name
-        print!("{} ", s.name);
-        println!();
-    }
-
-    Ok(())
 }
 
 /// Read all data from standard input, line by line, and return it as a String.

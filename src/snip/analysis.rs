@@ -27,8 +27,10 @@ pub struct Excerpt {
 impl Excerpt {
     /// Prints the formatted document excerpt
     pub fn print(&self) {
-        print!("    [{}-{}] ", self.position_first, self.position_last);
-        print!("\"");
+        let position_range = format!("{}{}{}{}{}", "[", self.position_first, "-".bright_black(), self.position_last, "]");
+
+        print!("    {} ", position_range.bright_black());
+        print!("");
         for (i, term) in self.terms.iter().enumerate() {
             // highlight if appropriate
             match term.highlight {
@@ -43,7 +45,6 @@ impl Excerpt {
                 print!("{}", term.suffix_clean);
             }
         }
-        print!("\"");
         println!();
     }
 }

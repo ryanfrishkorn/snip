@@ -1,5 +1,6 @@
 pub mod snip;
 
+use colored::*;
 use clap::{Arg, ArgAction, Command};
 use rusqlite::{Connection, OpenFlags, Result};
 use rust_stemmers::{Algorithm, Stemmer};
@@ -280,19 +281,24 @@ fn main() -> Result<(), Box<dyn Error>> {
         // ATTACH LS
         if let Some(("ls", attach_sub_matches)) = sub_matches.subcommand() {
             let ids = snip::get_attachment_all(&conn)?;
+            let full_uuid = attach_sub_matches.get_flag("long");
+            let show_time = attach_sub_matches.get_flag("time");
+
+            let heading = create_heading(full_uuid, show_time);
+            println!("{}", heading.bright_black());
             for id in ids {
                 let a = snip::get_attachment_from_uuid(&conn, id)?;
 
                 // uuid
                 if attach_sub_matches.get_flag("long") {
-                    print!("{} ", a.uuid);
+                    print!("{} ", a.uuid.to_string().bright_blue());
                 } else {
-                    print!("{} ", snip::split_uuid(&a.uuid)[0]);
+                    print!("{} ", snip::split_uuid(&a.uuid)[0].bright_blue());
                 }
 
                 // timestamp
                 if attach_sub_matches.get_flag("time") {
-                    print!("{} ", a.timestamp);
+                    print!("{} ", a.timestamp.to_string().bright_black());
                 }
 
                 // size
@@ -430,11 +436,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(("ls", _)) = matches.subcommand() {
         // honor arguments if present
         if let Some(arg_matches) = matches.subcommand_matches("ls") {
-            snip::list_snips(&conn, arg_matches.get_flag("l"), arg_matches.get_flag("t"))
+            list_snips(&conn, arg_matches.get_flag("l"), arg_matches.get_flag("t"))
                 .expect("could not list snips");
         } else {
             // default no args
-            snip::list_snips(&conn, false, false).expect("could not list snips");
+            list_snips(&conn, false, false).expect("could not list snips");
         }
     }
 
@@ -503,8 +509,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             for item in search_results.items {
                 let mut s = snip::get_from_uuid(&conn, &item.uuid)?;
                 s.analyze()?;
-                println!("{}", s.name);
-                print!("  {}", snip::split_uuid(&s.uuid)[0]);
+                println!("{}", s.name.bright_white());
+                print!("  {}", snip::split_uuid(&s.uuid)[0].bright_blue());
 
                 // create and print a summary of terms and counts
                 let mut terms_summary: HashMap<String, usize> = HashMap::new();
@@ -602,6 +608,55 @@ fn main() -> Result<(), Box<dyn Error>> {
             stems.push(stemmer.stem(w.to_lowercase().as_str()).to_string());
         }
         println!("{:?}", stems);
+    }
+
+    Ok(())
+}
+
+fn create_heading(full_uuid: bool, show_time: bool) -> String {
+    let mut output = String::new();
+
+    output = format!("uuid");
+    if show_time {
+        if full_uuid {
+            output = format!("{output}{:>37}", "time");
+            output = format!("{output}{:>34}", "name");
+        } else {
+            output = format!("{output}{:>9}", "time");
+            output = format!("{output}{:>34}", "name");
+        }
+    } else if full_uuid {
+        output = format!("{output}{:>37}", "name");
+    } else {
+        output = format!("{output}{:>9}", "name");
+    }
+    output
+}
+
+/// Print a list of all documents in the database.
+fn list_snips( conn: &Connection, full_uuid: bool, show_time: bool, ) -> Result<(), Box<dyn Error>> {
+    let ids = snip::uuid_list(conn)?;
+
+    // build and print dynamic heading
+    let heading = create_heading(full_uuid, show_time);
+    println!("{}", heading.bright_black());
+
+    for id in ids {
+        // print header
+        let s = snip::get_from_uuid(conn, &id)?;
+
+        // uuid
+        match full_uuid {
+            true => print!("{} ", s.uuid.to_string().bright_blue()),
+            false => print!("{} ", snip::split_uuid(&s.uuid)[0].bright_blue()),
+        }
+        // timestamp
+        if show_time {
+            print!("{} ", s.timestamp.to_string().bright_black());
+        }
+        // name
+        print!("{} ", s.name);
+        println!();
     }
 
     Ok(())
