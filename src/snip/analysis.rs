@@ -68,7 +68,7 @@ pub struct SnipWord {
 }
 
 impl SnipAnalysis {
-    pub fn get_excerpt(&self, pos: &usize, context_words: usize) -> Result<Excerpt, Box<dyn Error>> {
+    pub fn get_excerpt(&self, pos: &usize, context_words: usize, raw: bool) -> Result<Excerpt, Box<dyn Error>> {
         let term = &self.words[*pos].stem;
         let mut excerpt = Excerpt {
             position_first: 0,
@@ -103,9 +103,13 @@ impl SnipAnalysis {
                 if i == positions.len() - 1 { // do not print the final suffix
                     // break;
                 }
-                let suffix_stripped = suffix.replace(['\n', '\r', char::from_u32(0x0au32).unwrap()], " "); // no newlines, etc
+                let mut suffix_clean = suffix.clone();
+                if !raw {
+                    suffix_clean = suffix_clean.replace(['\n', '\r', char::from_u32(0x0au32).unwrap()], " "); // no newlines, etc
+                    suffix_clean = collapse_spaces(suffix_clean);
+                }
                 // remove repetitive whitespace to conform formatted text to search results
-                excerpt_term.suffix_clean = collapse_spaces(suffix_stripped);
+                excerpt_term.suffix_clean = suffix_clean;
             }
 
             excerpt.terms.push(excerpt_term);

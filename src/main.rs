@@ -163,10 +163,18 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .arg(
                     Arg::new("context")
                         .help("number of surrounding context words displayed")
+                        .short('C')
                         .long("context")
                         .num_args(1)
                         .required(false)
                         .action(ArgAction::Append)
+                )
+                .arg(
+                    Arg::new("raw")
+                        .help("do not strip newlines or returns from search excerpt")
+                        .long("raw")
+                        .num_args(0)
+                        .action(ArgAction::SetTrue)
                 )
                 .arg(
                     Arg::new("terms")
@@ -450,6 +458,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let terms: Vec<String> = args.map(|x| x.to_owned()).collect();
             let terms_stem = stem_vec(terms.clone());
             let mut terms_exclude: Vec<String> = Vec::new();
+            let mut context_raw = false;
 
             // filter out duplicate search terms if present
             let mut seen_terms: Vec<String> = Vec::new();
@@ -476,6 +485,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             let mut context_words = 6;
             if let Some(context) = sub_matches.get_one::<String>("context") {
                 context_words = context.parse::<usize>()?;
+            }
+
+            // check if raw search context is desired
+            if let Some(raw) = sub_matches.get_one::<bool>("raw") {
+                context_raw = *raw;
             }
 
             // perform search and print summary
@@ -521,7 +535,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             }
 
                             // this gathers an excerpt from the supplied position
-                            let excerpt = s.analysis.get_excerpt(pos, context_words)?;
+                            let excerpt = s.analysis.get_excerpt(pos, context_words, context_raw)?;
                             excerpt.print();
                         }
                     }
