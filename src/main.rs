@@ -122,12 +122,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         )
         .subcommand(
             Command::new("ls")
-                .about("List all snips")
+                .about("List snips")
                 .arg(
                     Arg::new("l")
                         .short('l')
                         .num_args(0)
                         .action(ArgAction::SetTrue),
+                )
+                .arg(
+                    Arg::new("limit")
+                        .help("number of documents to list")
+                        .short('n')
+                        .num_args(1)
+                        .action(ArgAction::Append),
                 )
                 .arg(
                     Arg::new("t")
@@ -409,7 +416,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(("index", _)) = matches.subcommand() {
         snip::create_index_table(&conn)?;
 
-        let ids = snip::uuid_list(&conn)?;
+        let ids = snip::uuid_list(&conn, 0)?;
         let mut status_len: usize;
         eprint!("indexing...");
         for (i, id) in ids.iter().enumerate() {
@@ -436,11 +443,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(("ls", _)) = matches.subcommand() {
         // honor arguments if present
         if let Some(arg_matches) = matches.subcommand_matches("ls") {
-            list_snips(&conn, arg_matches.get_flag("l"), arg_matches.get_flag("t"))
+
+            // check for limit
+            let mut limit: usize = 0;
+            if let Some(v) = arg_matches.get_one::<String>("limit") {
+                limit = v.parse::<usize>()?;
+            }
+            list_snips(&conn, limit, arg_matches.get_flag("l"), arg_matches.get_flag("t"))
                 .expect("could not list snips");
         } else {
             // default no args
-            list_snips(&conn, false, false).expect("could not list snips");
+            list_snips(&conn, 0, false, false).expect("could not list snips");
         }
     }
 
@@ -614,9 +627,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn create_heading(full_uuid: bool, show_time: bool) -> String {
-    let mut output = String::new();
-
-    output = format!("uuid");
+    let mut output = "uuid".to_string();
     if show_time {
         if full_uuid {
             output = format!("{output}{:>37}", "time");
@@ -634,8 +645,8 @@ fn create_heading(full_uuid: bool, show_time: bool) -> String {
 }
 
 /// Print a list of all documents in the database.
-fn list_snips( conn: &Connection, full_uuid: bool, show_time: bool, ) -> Result<(), Box<dyn Error>> {
-    let ids = snip::uuid_list(conn)?;
+fn list_snips( conn: &Connection, limit: usize, full_uuid: bool, show_time: bool, ) -> Result<(), Box<dyn Error>> {
+    let ids = snip::uuid_list(conn, limit)?;
 
     // build and print dynamic heading
     let heading = create_heading(full_uuid, show_time);

@@ -366,17 +366,29 @@ pub fn insert_snip(conn: &Connection, s: &Snip) -> Result<(), Box<dyn Error>> {
 }
 
 /// Return a vector of Uuid of all documents in the database
-pub fn uuid_list(conn: &Connection) -> Result<Vec<Uuid>, Box<dyn Error>> {
+pub fn uuid_list(conn: &Connection, limit: usize) -> Result<Vec<Uuid>, Box<dyn Error>> {
     let mut ids: Vec<Uuid> = Vec::new();
-    let mut stmt = conn.prepare("SELECT uuid FROM snip")?;
-    let query_iter = stmt.query_and_then([], |row| -> Result<Uuid, Box<dyn Error>>{
-        let id_string: String = row.get(0)?;
-        let id = Uuid::try_parse(id_string.as_str())?;
-        Ok(id)
-    })?;
 
-    for id in query_iter.flatten() {
-        ids.push(id);
+    if limit != 0 {
+        let mut stmt = conn.prepare("SELECT uuid FROM snip ORDER BY datetime(timestamp) DESC LIMIT :limit")?;
+        let query_iter = stmt.query_map(&[(":limit", &limit)], |row| {
+            let id_str: String = row.get(0)?;
+            Ok(id_str)
+        })?;
+
+        for id_str in query_iter.flatten() {
+            let id = Uuid::try_parse(id_str.as_str())?;
+            ids.push(id);
+        }
+    } else {
+        let mut stmt = conn.prepare("SELECT uuid FROM snip ORDER BY datetime(timestamp) DESC")?;
+        let mut rows = stmt.query([])?;
+
+        while let Some(row) = rows.next()? {
+            let id_str: String = row.get(0)?;
+            let id = Uuid::try_parse(id_str.as_str())?;
+            ids.push(id);
+        }
     }
 
     Ok(ids)
