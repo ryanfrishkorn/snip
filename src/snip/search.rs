@@ -5,6 +5,112 @@ use uuid::Uuid;
 use crate::snip::SnipError;
 
 #[derive(Debug)]
+pub struct SearchQuery {
+    pub terms_include: Vec<String>, // all terms must be present in a document
+    pub terms_exclude: Vec<String>, // none of these terms may be present in a document
+    pub terms_optional: Vec<String>, // neither mandatory nor disqualifying, but increase score if present
+    pub method: SearchMethod, // search the index, document text field, etc.
+}
+
+#[derive(Debug)]
+pub struct SearchQueryResult {
+    pub items: Vec<SearchQueryItem>,
+}
+
+#[derive(Debug)]
+pub struct SearchQueryItem {
+    pub uuid: Uuid,
+    pub score: Option<f64>,
+    pub matches: HashMap<String, Vec<usize>>, // term, positions
+}
+
+#[derive(Debug)]
+pub struct SearchQueryTerm {
+    pub term: String,
+    pub positions: Vec<usize>,
+}
+
+#[derive(Debug)]
+pub enum SearchMethod {
+    IndexStem, // index of stemmed terms parsed from document text
+    IndexWord, // index of unmodified words parsed from document text
+    Literal, // direct matching on unmodified document text
+}
+
+impl SearchQueryResult {
+    /*
+    /// Score the search results using both the result and the query. This will allow for
+    /// scores to be based on the relationship between individual results.
+    pub fn score_search_query(query: SearchQuery, result: &mut SearchQueryResult) {
+    }
+     */
+}
+
+/// Search using a logical combination of terms that must all be present, terms that disqualify
+/// if present, and terms that are optional but add to the result score
+pub fn search_structured(conn: &Connection, search_query: SearchQuery) -> Result<SearchQueryResult, Box<dyn Error>> {
+    let mut query_result = SearchQueryResult {
+        items: Vec::new(),
+    };
+    // let terms_positive_results: HashMap<String, Uuid> = HashMap::new();
+
+    // INCLUDE
+    let mut include_results: Vec<Uuid> = Vec::new();
+    for (i, term) in search_query.terms_include.iter().enumerate() {
+        let mut result = search_uuids_matching_term(conn, term)?;
+        // println!("iter result: {:?}", result);
+        // push all results on first run for next iteration comparison
+        if i == 0 {
+            include_results.append(&mut result);
+            // break if there was only one term
+            if search_query.terms_include.len() == 1 {
+                break;
+            }
+            continue;
+        }
+
+        // filter non-matching uuids
+        // include_results.iter_mut().filter(|id| result.contains(&id)).collect::<Vec<_>>();
+        include_results.retain_mut(|id| result.contains(id));
+    }
+    // println!("include_results: {:?}", include_results);
+
+    // EXCLUDE
+    let mut exclude_results: Vec<Uuid> = Vec::new();
+    for term in search_query.terms_exclude {
+        let result = search_uuids_matching_term(conn, &term)?;
+        for r in result {
+            if !exclude_results.contains(&r) {
+                exclude_results.push(r);
+            }
+        }
+    }
+    // println!("exclude_results: {:?}", exclude_results);
+
+    // SUBTRACT EXCLUDE FROM INCLUDE
+    include_results.retain_mut(|id| !exclude_results.contains(id));
+    // println!("filtered_results: {:?}", include_results);
+
+    // BUILD OUTPUT
+    for uuid in include_results {
+        let mut item = SearchQueryItem {
+            uuid,
+            score: None,
+            matches: HashMap::new(),
+        };
+
+        // gather and push positions for each term
+        for term in search_query.terms_include.iter() {
+            let positions = get_term_positions(conn, &uuid, term)?;
+            item.matches.insert(term.clone(), positions);
+        }
+        query_result.items.push(item);
+    }
+
+    Ok(query_result)
+}
+
+#[derive(Debug)]
 pub struct SearchResult {
     pub items: HashMap<Uuid, Vec<SearchTermPositions>>
 }
@@ -20,35 +126,6 @@ pub struct SearchResultTerm {
     pub term: String,
     pub positions: Vec<usize>,
 }
-
-/// Data structure layout for convenient output with context
-///
-/// Latin Sample Text
-///   c908e14c [lorem: 2, ipsum: 1]
-///     [0-8] "Lorem of the sea and the..."
-///     [21-29] "Lorem ipsum of the sea and the..."
-///
-/// This output will require these structs
-///
-/// Vec<SearchResult>
-///
-/// struct SearchResult {
-///     s: Snip,
-///     matches: HashMap<String, Vec<usize>> // (term, Vec<positions>)
-///     score: Option<f64>, // this way we can sort by score easily
-/// }
-///
-/// struct IndexResult {
-///     term: String,
-///     positions: Vec<usize>,
-/// }
-///
-/// The code will be similar to this:
-///
-/// for result in search_results {
-///     println!("{}", result.s.name);
-///     println!("  {} {:?}", result.s.uuid,
-/// }
 
 /// Returns ids of documents that match the given term
 pub fn search_data(conn: &Connection, term: &String) -> Result<Vec<Uuid>, Box<dyn Error>> {
@@ -75,33 +152,25 @@ pub fn search_data(conn: &Connection, term: &String) -> Result<Vec<Uuid>, Box<dy
     Ok(results)
 }
 
-/// Search for term and return a vector containing uuid and vector of term positions
-pub fn search_index_term(conn: &Connection, term: &String) -> Result<Vec<(Uuid, Vec<usize>)>, Box<dyn Error>> {
-    let mut results: Vec<(Uuid, Vec<usize>)> = Vec::new();
-    let mut results_single: (Uuid, Vec<usize>);
-    let mut stmt = conn.prepare("SELECT uuid, positions FROM snip_index_rs WHERE term = :term")?;
-    let rows = stmt.query_and_then(&[(":term", &term)], |row| -> Result<(String, String), Box<dyn Error>> {
-        let id: String = row.get(0)?;
-        let positions: String = row.get(1)?;
-        Ok((id, positions))
+fn get_term_positions(conn: &Connection, id: &Uuid, term: &String) -> Result<Vec<usize>, Box<dyn Error>> {
+    let mut stmt = conn.prepare("SELECT positions FROM snip_index_rs WHERE uuid = :uuid AND term = :term")?;
+    let query_iter = stmt.query_map(&[(":uuid", &id.to_string()), (":term", term)], |row| {
+        let positions = row.get::<_, String>(0)?;
+        Ok(positions)
     })?;
 
-    for row in rows.flatten() {
-        // parse uuid, split positions string and create vector
-        let id: Uuid = Uuid::try_parse(row.0.as_str())?;
-        let positions_split: Vec<usize> = row.1.split(',').map(|x| x.parse::<usize>().expect("converting position string to usize")).collect();
-        results_single = (id, positions_split);
-        results.push(results_single);
-        // return Ok(results_single);
+    let mut positions: Vec<usize> = Vec::new();
+    if let Some(positions_str) = query_iter.flatten().next() {
+        positions = positions_str
+            .split(',')
+            .map(|x| x.parse::<usize>().expect("converting db pos to usize"))
+            .collect();
     }
-    if results.is_empty() {
-        return Err(Box::new(SnipError::SearchNoMatches("no matches found in index".to_string())));
-    }
-    Ok(results)
+    Ok(positions)
 }
 
 /// Search the index and return uuids that contain term
-pub fn search_uuids_matching_term(conn: &Connection, term: String) -> Result<Vec<Uuid>, Box<dyn Error>> {
+pub fn search_uuids_matching_term(conn: &Connection, term: &String) -> Result<Vec<Uuid>, Box<dyn Error>> {
     let mut ids: Vec<Uuid> = Vec::new();
     let mut stmt = conn.prepare("SELECT uuid FROM snip_index_rs WHERE term = :term")?;
     let rows = stmt.query_and_then(&[(":term", &term)], |row| -> Result<String, Box<dyn Error>> {
@@ -114,76 +183,6 @@ pub fn search_uuids_matching_term(conn: &Connection, term: String) -> Result<Vec
         ids.push(id);
     }
     Ok(ids)
-}
-
-/// Search using a logical combination of terms that must all be present, terms that disqualify if
-/// present, and terms that are optional but add to the result score
-/*
-pub fn search_prototype(conn: &Connection, terms_positive: Vec<String>, _terms_negative: Vec<String>, _terms_optional: Vec<String>) -> Result<Vec<Uuid>, Box<dyn Error>> {
-    todo!();
-    // let results = search_all_present(conn, terms_positive)?;
-    // Ok(results)
-}
- */
-
-/// Reduce the input of vectors to a single vector of Uuids that are the intersection of all vectors
-///
-/// Uuids must be unique in each vector
-fn _reduce_match_all(input: Vec<Vec<Uuid>>) -> Vec<Uuid> {
-    let mut results: Vec<Uuid> = Vec::new();
-    let matches_required = input.len();
-
-    for term_results in &input {
-        for id in term_results {
-            // do not continue if already present in results
-            // this also avoids adding duplicates
-            if results.contains(id) {
-                continue;
-            }
-            let mut matches = 0;
-            for term_results_inner in &input {
-                if term_results_inner.contains(id) {
-                    matches += 1;
-                }
-            }
-            if matches == matches_required {
-                results.push(*id);
-            }
-        }
-    }
-    // sort for later comparisons
-    results.sort();
-    results
-}
-
-fn _reduce_match_all_terms(input: Vec<Vec<SearchResultTerm>>) -> Vec<SearchResultTerm> {
-    let mut results: Vec<SearchResultTerm> = Vec::new();
-    let matches_required = input.len();
-
-    for term_results in &input {
-        'outer: for search_result in term_results {
-            // check if already appended to results
-            for r in &results {
-                if r.uuid == search_result.uuid {
-                    continue 'outer;
-                }
-            }
-
-            // look for matches
-            let mut matches = 0;
-            for term_results_inner in &input {
-                for r in term_results_inner {
-                    if r.uuid == search_result.uuid {
-                        matches += 1;
-                    }
-                }
-            }
-            if matches == matches_required {
-                results.push(search_result.clone())
-            }
-        }
-    }
-    results
 }
 
 pub fn search_all_present(conn: &Connection, terms: Vec<String>) -> Result<SearchResult, Box<dyn Error>> {
@@ -229,18 +228,6 @@ pub fn search_all_present(conn: &Connection, terms: Vec<String>) -> Result<Searc
     Ok(result)
 }
 
-/// Searches the database index returning UUIDs that match supplied terms
-pub fn search_index_terms(conn: &Connection, terms: &Vec<String>) -> Result<HashMap<String, Vec<(Uuid, Vec<usize>)>>, Box<dyn Error>> {
-    let mut results: HashMap<String, Vec<(Uuid, Vec<usize>)>> = HashMap::new();
-
-    // search each term
-    for term in terms {
-        let results_single_term = search_index_term(conn, term)?;
-        results.insert(term.clone(), results_single_term);
-    }
-    Ok(results)
-}
-
 /// Search for a uuid matching the supplied partial string.
 /// The partial uuid must match a unique record to return the result.
 pub fn search_uuid(conn: &Connection, id_partial: &str) -> Result<Uuid, Box<dyn Error>> {
@@ -274,99 +261,11 @@ pub fn search_uuid(conn: &Connection, id_partial: &str) -> Result<Uuid, Box<dyn 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
     use std::error::Error;
     use uuid::Uuid;
     use crate::snip;
     use crate::snip::test_prep::*;
-
-    #[test]
-    fn test_reduce_match_all() -> Result<(), Box<dyn Error>> {
-        let a = Uuid::try_parse("00000000-0000-0000-0000-000000000000").unwrap();
-        let b = Uuid::try_parse("00000000-0000-0000-0000-000000000001").unwrap();
-        let c = Uuid::try_parse("00000000-0000-0000-0000-000000000002").unwrap();
-        let d = Uuid::try_parse("00000000-0000-0000-0000-000000000003").unwrap();
-        let e = Uuid::try_parse("00000000-0000-0000-0000-000000000004").unwrap();
-        let f = Uuid::try_parse("00000000-0000-0000-0000-000000000005").unwrap();
-
-        let input: Vec<Vec<Uuid>> = vec![
-            vec![
-                a, b, c, d, e, f,
-            ],
-            vec![
-                a, c, d, e, f,
-            ],
-            vec![
-                a, b, c, f,
-            ],
-        ];
-
-        let expect: Vec<Uuid> = vec![a, c, f];
-        let reduced = _reduce_match_all(input);
-        if expect != reduced {
-            panic!("expected {:?} got {:?}", expect, reduced);
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_reduce_match_all_terms() -> Result<(), Box<dyn Error>> {
-        // reduce_match_all_terms(input: Vec<Vec<SearchResultTerm>>) -> Vec<SearchResultTerm> {
-        let a = SearchResultTerm {
-            uuid: Uuid::try_parse("00000000-0000-0000-0000-000000000000").unwrap(),
-            term: "lorem".to_string(),
-            positions: vec![0, 1, 2],
-        };
-        let b = SearchResultTerm {
-            uuid: Uuid::try_parse("00000000-0000-0000-0000-000000000001").unwrap(),
-            term: "lorem".to_string(),
-            positions: vec![0, 1, 2],
-        };
-        let c = SearchResultTerm {
-            uuid: Uuid::try_parse("00000000-0000-0000-0000-000000000002").unwrap(),
-            term: "lorem".to_string(),
-            positions: vec![0, 1, 2],
-        };
-        let d = SearchResultTerm {
-            uuid: Uuid::try_parse("00000000-0000-0000-0000-000000000003").unwrap(),
-            term: "lorem".to_string(),
-            positions: vec![0, 1, 2],
-        };
-        let e = SearchResultTerm {
-            uuid: Uuid::try_parse("00000000-0000-0000-0000-000000000004").unwrap(),
-            term: "lorem".to_string(),
-            positions: vec![0, 1, 2],
-        };
-        let f = SearchResultTerm {
-            uuid: Uuid::try_parse("00000000-0000-0000-0000-000000000005").unwrap(),
-            term: "lorem".to_string(),
-            positions: vec![0, 1, 2],
-        };
-
-        let input: Vec<Vec<SearchResultTerm>> = vec![
-            vec![
-                a.clone(), b.clone(), c.clone(), d.clone(), e.clone(), f.clone(),
-            ],
-            vec![
-                a.clone(), c.clone(), d.clone(), e.clone(),
-            ],
-            vec![
-                a.clone(), c.clone(), f.clone(),
-            ],
-        ];
-
-        let expect: Vec<SearchResultTerm> = vec![a, c];
-        let result = _reduce_match_all_terms(input);
-        // println!("expect: {:#?}", expect);
-        println!("result: {:#?}", result);
-
-        for (i, r) in result.iter().enumerate() {
-            if r.uuid != expect[i].uuid {
-                panic!("failed integrity check");
-            }
-        }
-        Ok(())
-    }
 
     #[test]
     fn test_search_all_present() -> Result<(), Box<dyn Error>> {
@@ -388,6 +287,60 @@ mod tests {
             println!("  {:#?}", v);
         }
          */
+        Ok(())
+    }
+
+    #[test]
+    fn test_search_structured() -> Result<(), Box<dyn Error>> {
+        let conn = prepare_database()?;
+        snip::index_all_items(&conn)?;
+
+        let query = SearchQuery {
+            // terms_include: vec!["ipsum".to_string(), "dolor".to_string()],
+            terms_include: vec!["in".to_string(), "is".to_string()],
+            terms_exclude: vec!["fuzz".to_string()],
+            terms_optional: vec![],
+            method: SearchMethod::IndexStem,
+        };
+
+        let expect = SearchQueryResult {
+            items: vec![
+                SearchQueryItem {
+                    uuid: Uuid::try_parse("412f7ca8-824c-4c70-80f0-4cca6371e45a")?,
+                    score: None,
+                    matches: HashMap::from([
+                        ("in".to_string(), vec![
+                            116, 159, 352, 730, 794,
+                            809, 1043, 1114, 1143, 1317,
+                            1341, 1362, 1397, 1417,
+                        ]),
+                        ("is".to_string(), vec![
+                            100, 110, 359, 591, 715,
+                            806, 818, 938, 954, 1023,
+                            1034, 1053, 1171, 1218, 1266,
+                            1370, 1377, 1387, 1393, 1414,
+                            1439, 1512, 1517, 1542, 1591,
+                        ]),
+                    ]),
+                }
+            ],
+        };
+
+        let result = search_structured(&conn, query)?;
+        // println!("expect: {:?}", expect);
+        // println!("result: {:?}", result);
+
+        // verify id, length, and keys only
+        let expect_item = expect.items.first().expect("getting first item");
+        let result_item = result.items.first().expect("getting first item");
+        if expect_item.uuid != result_item.uuid {
+            panic!("expected uuid {} got {}", expect_item.uuid, result_item.uuid);
+        }
+
+        if expect_item.matches != result_item.matches {
+            panic!("expected item {:?} got {:?}", expect_item, result_item);
+        }
+
         Ok(())
     }
 

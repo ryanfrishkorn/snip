@@ -3,7 +3,7 @@ pub mod snip;
 use clap::{Arg, ArgAction, Command};
 use rusqlite::{Connection, OpenFlags, Result};
 use rust_stemmers::{Algorithm, Stemmer};
-use snip::{Snip, SnipAnalysis, SnipError};
+use snip::{SearchQuery, Snip, SnipAnalysis, SnipError};
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
@@ -11,6 +11,7 @@ use std::io::Read;
 use std::path::Path;
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
+use crate::snip::SearchMethod;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let cmd = Command::new("snip-rs")
@@ -464,33 +465,40 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
 
             // perform search and print summary
-            let search_results = snip::search_all_present(&conn, terms_stem_unique)?;
-            for (id, search_result_item) in search_results.items {
-                let mut s = snip::get_from_uuid(&conn, &id)?;
+            let search_query = SearchQuery {
+                terms_include: terms_stem_unique.clone(),
+                terms_exclude: vec![],
+                terms_optional: vec![],
+                method: SearchMethod::IndexStem,
+            };
+            let search_results = snip::search_structured(&conn, search_query)?;
+            for item in search_results.items {
+                let mut s = snip::get_from_uuid(&conn, &item.uuid)?;
                 s.analyze()?;
                 println!("{}", s.name);
                 print!("  {}", snip::split_uuid(&s.uuid)[0]);
 
                 // create and print a summary of terms and counts
                 let mut terms_summary: HashMap<String, usize> = HashMap::new();
-                for t in &search_result_item {
-                    for m in t.matches.clone() {
-                        terms_summary.insert(m.0, m.1.len());
-                    }
+                for (term, positions) in &item.matches {
+                    terms_summary.insert(term.clone(), positions.len());
                 }
                 print!(" [");
-                for (i, (id, search_result_item)) in terms_summary.iter().enumerate() {
-                    print!("{}: {}", id, search_result_item);
-                    if i != terms_summary.len() - 1 {
-                        print!(" ");
+                // use argument terms vector to order by term
+                for (i, term) in terms_stem_unique.iter().enumerate() {
+                    if let Some(count) = terms_summary.get(term.as_str()) {
+                        print!("{}: {}", term, count);
+                        if i != terms_summary.len() -1 {
+                            print!(" ");
+                        }
                     }
                 }
                 print!("]");
                 println!();
 
                 // for each position, gather context and display
-                for item in search_result_item {
-                    for (_, positions) in item.matches {
+                for term in &terms_stem_unique {
+                    if let Some(positions) = item.matches.get(term.as_str()) {
                         for (i, pos) in positions.iter().enumerate() {
                             // if limit is hit, show the additional match count
                             if i != 0 && i == excerpt_limit {
@@ -500,7 +508,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                             // this gathers an excerpt from the supplied position
                             let excerpt = s.analysis.get_excerpt(pos, context_words)?;
-                            // print_excerpt(&excerpt);
                             excerpt.print();
                         }
                     }
