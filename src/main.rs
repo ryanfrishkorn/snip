@@ -128,7 +128,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             Command::new("ls")
                 .about("List snips")
                 .arg(
-                    Arg::new("l")
+                    Arg::new("long")
                         .help("display full uuid")
                         .short('l')
                         .num_args(0)
@@ -142,7 +142,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .action(ArgAction::Append),
                 )
                 .arg(
-                    Arg::new("t")
+                    Arg::new("size")
+                        .help("display size in bytes")
+                        .short('s')
+                        .num_args(0)
+                        .action(ArgAction::SetTrue),
+                )
+                .arg(
+                    Arg::new("time")
                         .help("display timestamp")
                         .short('t')
                         .num_args(0)
@@ -451,23 +458,62 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // LS
     if let Some(("ls", _)) = matches.subcommand() {
+        let mut header = ListHeading {
+            columns: Vec::new(),
+        };
+
         // honor arguments if present
         if let Some(arg_matches) = matches.subcommand_matches("ls") {
+            // uuid
+            let mut column_uuid = ListHeadingPosition {
+                // short id
+                name: "uuid".to_string(),
+                width: 8,
+                align: ListHeadingAlignment::Left,
+            };
+            if arg_matches.get_flag("long") {
+                // long id
+                column_uuid.width = 36;
+            }
+            // id is required for now, so push either way
+            header.columns.push(column_uuid);
+
+            // timestamp
+            let column_time = ListHeadingPosition {
+                name: "time".to_string(),
+                width: 33,
+                align: ListHeadingAlignment::Left,
+            };
+            if arg_matches.get_flag("time") {
+                header.columns.push(column_time);
+            }
+
+            // size
+            let column_size = ListHeadingPosition {
+                name: "size".to_string(),
+                width: 9,
+                align: ListHeadingAlignment::Right,
+            };
+            if arg_matches.get_flag("size") {
+                header.columns.push(column_size);
+            }
+
+            // name
+            let column_name = ListHeadingPosition {
+                name: "name".to_string(),
+                width: 0,
+                align: ListHeadingAlignment::Left,
+            };
+            header.columns.push(column_name);
+
             // check for limit
             let mut limit: usize = 0;
             if let Some(v) = arg_matches.get_one::<String>("number") {
                 limit = v.parse::<usize>()?;
             }
-            list_snips(
-                &conn,
-                limit,
-                arg_matches.get_flag("l"),
-                arg_matches.get_flag("t"),
-            )
-            .expect("could not list snips");
-        } else {
-            // default no args
-            list_snips(&conn, 0, false, false).expect("could not list snips");
+
+            eprintln!("{}", header.build().bright_black());
+            list_snips(&conn, header, limit)?;
         }
     }
 
@@ -644,7 +690,58 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Data structure for headings of lists
+struct ListHeading {
+    columns: Vec<ListHeadingPosition>,
+}
+
+/// Represents the prefix and suffix of a column header
+struct ListHeadingPosition {
+    name: String,
+    width: usize,
+    align: ListHeadingAlignment,
+}
+
+enum ListHeadingAlignment {
+    Left,
+    Right,
+}
+
+impl ListHeading {
+    /// Builds a string to display field headers for listings
+    pub fn build(&mut self) -> String {
+        let mut output = String::new();
+
+        // iterate over all fields to establish column width
+        for column in self.columns.iter() {
+            // println!("column: {:?}", column);
+            let mut prefix: String = String::new();
+            let mut suffix: String = String::new();
+            match column.align {
+                ListHeadingAlignment::Left => {
+                    if column.width >= column.name.len() {
+                        for _ in 0..(column.width - column.name.len()) {
+                            suffix.push(' ');
+                        }
+                    }
+                },
+                ListHeadingAlignment::Right => {
+                    if column.width >= column.name.len() {
+                        for _ in 0..(column.width - column.name.len()) {
+                            prefix.push(' ');
+                        }
+                    }
+                },
+            }
+
+            output = format!("{}{}{}{} ", output, prefix, column.name, suffix);
+        }
+        output
+    }
+}
+
 fn create_heading(full_uuid: bool, show_time: bool) -> String {
+    // establish field widths
     let mut output = "uuid".to_string();
     if show_time {
         if full_uuid {
@@ -662,34 +759,33 @@ fn create_heading(full_uuid: bool, show_time: bool) -> String {
     output
 }
 
-/// Print a list of all documents in the database.
-fn list_snips(
-    conn: &Connection,
-    limit: usize,
-    full_uuid: bool,
-    show_time: bool,
-) -> Result<(), Box<dyn Error>> {
+fn list_snips(conn: &Connection, heading: ListHeading, limit: usize) -> Result<(), Box<dyn Error>> {
     let ids = snip::uuid_list(conn, limit)?;
 
-    // build and print dynamic heading
-    let heading = create_heading(full_uuid, show_time);
-    println!("{}", heading.bright_black());
-
     for id in ids {
-        // print header
         let s = snip::get_from_uuid(conn, &id)?;
 
-        // uuid
-        match full_uuid {
-            true => print!("{} ", s.uuid.to_string().bright_blue()),
-            false => print!("{} ", snip::split_uuid(&s.uuid)[0].bright_blue()),
+        // check if specified
+        for col in &heading.columns {
+            let str = match col.name.as_str() {
+                "uuid" => s.uuid.to_string().bright_blue(),
+                "time" => s.timestamp.to_string().bright_black(),
+                "size" => s.text.len().to_string().white(),
+                "name" => s.name.clone().white(),
+                _ => return Err(Box::new(SnipError::General("invalid column name supplied".to_string()))),
+            };
+            // eprintln!("prefix: {} suffix: {}", col.prefix, col.suffix);
+            match col.name.as_str() {
+                "uuid" => {
+                    match col.width {
+                        v if v <= 8 => print!("{} ", snip::split_uuid(&s.uuid)[0].bright_blue()),
+                        _ => print!("{} ", s.uuid.to_string().bright_blue()),
+                    }
+                }
+                "size" => print!("{:>9} ", str),
+                _ => print!("{} ", str),
+            }
         }
-        // timestamp
-        if show_time {
-            print!("{} ", s.timestamp.to_string().bright_black());
-        }
-        // name
-        print!("{} ", s.name);
         println!();
     }
 
