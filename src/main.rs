@@ -585,7 +585,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             for item in search_results.items {
                 let mut s = snip::get_from_uuid(&conn, &item.uuid)?;
                 s.analyze()?;
-                println!("{}", s.name.bright_white());
+                println!("{}", s.name.white());
                 print!("  {}", snip::split_uuid(&s.uuid)[0].bright_blue());
 
                 // create and print a summary of terms and counts
