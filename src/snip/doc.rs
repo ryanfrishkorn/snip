@@ -326,6 +326,27 @@ pub fn find_by_graph(word: &str, text: Vec<&str>) -> Option<usize> {
     None
 }
 
+/// Generate document name from provided text
+pub fn generate_name(text: &String, count: usize) -> Result<String, Box<dyn Error>> {
+    let mut name = String::new();
+
+    let words: Vec<&str> = text.unicode_words().collect();
+    if words.len() < count {
+        return Err(Box::new(SnipError::General(format!("could not parse {} unicode words from supplied text", count))))
+    }
+
+    for (i, word) in words.iter().enumerate() {
+        if i == count {
+            break;
+        }
+        name = format!("{name}{word} ");
+    }
+    // remove last space
+    name = name.trim_end().to_string();
+
+    Ok(name)
+}
+
 /// Get the snip specified matching the given full-length uuid string.
 pub fn get_from_uuid(conn: &Connection, id: &Uuid) -> Result<Snip, Box<dyn Error>> {
     let mut stmt = conn.prepare("SELECT uuid, timestamp, name, data FROM snip WHERE uuid = :id")?;
@@ -498,6 +519,19 @@ mod tests {
         // repeat the test to ensure that document refreshes properly
         s.collect_attachments(&conn)?;
         assert_eq!(s.attachments.len(), 1); // expect one attachment
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_name() -> Result<(), Box<dyn Error>> {
+        let text = "Documents are good: for the soul, and other things as well.".to_string();
+        let expect = "Documents are good for the soul".to_string();
+
+        let result = generate_name(&text, 6)?;
+        if result != expect {
+            panic!("expected '{}', got '{}'", expect, result);
+        }
+
         Ok(())
     }
 

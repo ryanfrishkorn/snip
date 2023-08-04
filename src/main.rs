@@ -241,15 +241,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     // process all subcommands as in: https://docs.rs/clap/latest/clap/_derive/_cookbook/git/index.html
     // ADD
     if let Some(("add", sub_matches)) = matches.subcommand() {
-        let name = sub_matches
-            .get_one::<String>("name")
-            .ok_or("matching name arg")?;
+
+        // document text
         let mut text: String = String::new();
         match sub_matches.get_one::<String>("file") {
             Some(v) => text = std::fs::read_to_string(v)?,
             None => {
                 std::io::stdin().read_to_string(&mut text)?; // FIXME I don't like this
             }
+        };
+
+        // name from arg or generate from text
+        let name: String = match sub_matches.get_one::<String>("name") {
+            Some(v) => v.clone(),
+            None => snip::generate_name(&text, 6)?,
         };
 
         // create document
