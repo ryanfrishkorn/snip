@@ -325,8 +325,8 @@ mod tests {
         // println!("result: {:?}", result);
 
         // verify id, length, and keys only
-        let expect_item = expect.items.first().expect("getting first item");
-        let result_item = result.items.first().expect("getting first item");
+        let expect_item = expect.items.first().expect("getting first expect_item");
+        let result_item = result.items.first().expect("getting first result_item");
         if expect_item.uuid != result_item.uuid {
             panic!("expected uuid {} got {}", expect_item.uuid, result_item.uuid);
         }

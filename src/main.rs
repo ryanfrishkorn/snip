@@ -421,7 +421,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // INDEX
     if let Some(("index", _)) = matches.subcommand() {
+        // creation is conditional on non-existence
         snip::create_index_table(&conn)?;
+        // clear all data to ensure consistency
+        snip::clear_index(&conn)?;
 
         let ids = snip::uuid_list(&conn, 0)?;
         let mut status_len: usize;

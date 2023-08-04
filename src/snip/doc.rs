@@ -268,6 +268,13 @@ impl Snip {
     }
 }
 
+/// Clear the search index
+pub fn clear_index(conn: &Connection) -> Result<usize, Box<dyn Error>> {
+    let mut stmt = conn.prepare("DELETE FROM snip_index_rs")?;
+    let n = stmt.execute([])?;
+    Ok(n)
+}
+
 /// Create the main tables used to store documents, attachments, and document matrix.
 pub fn create_snip_tables(conn: &Connection) -> Result<(), Box<dyn Error>> {
     let mut stmt = conn.prepare(
@@ -334,6 +341,9 @@ pub fn get_from_uuid(conn: &Connection, id: &Uuid) -> Result<Snip, Box<dyn Error
 
 /// Indexes the terms of all documents in the database
 pub fn index_all_items(conn: &Connection) -> Result<(), Box<dyn Error>> {
+    // clear first
+    clear_index(conn)?;
+
     // iterate through snips
     let mut stmt = conn.prepare("SELECT uuid, timestamp, name, data FROM snip")?;
     let rows = stmt.query_and_then([], |row| {
@@ -406,10 +416,14 @@ pub fn remove_snip(conn: &Connection, id: Uuid) -> Result<(), Box<dyn Error>> {
     let mut s = get_from_uuid(conn, &id)?;
     // collect and remove attachments
     s.collect_attachments(conn)?;
-    for a in s.attachments {
+    for a in &s.attachments {
         a.remove(conn)?;
     }
 
+    // remove terms from the index
+    s.drop_word_indices(conn)?;
+
+    // remove the document
     let mut stmt = conn.prepare("DELETE FROM snip WHERE uuid = ?1")?;
     let n = stmt.execute([id.to_string()]);
     match n {
