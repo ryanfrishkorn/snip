@@ -1,10 +1,10 @@
 pub mod snip;
 
-use colored::*;
+use crate::snip::{SearchMethod, SearchQuery, Snip, SnipAnalysis, SnipError};
 use clap::{Arg, ArgAction, Command};
+use colored::*;
 use rusqlite::{Connection, OpenFlags, Result};
 use rust_stemmers::{Algorithm, Stemmer};
-use snip::{SearchQuery, Snip, SnipAnalysis, SnipError};
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
@@ -12,11 +12,10 @@ use std::io::Read;
 use std::path::Path;
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
-use crate::snip::SearchMethod;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let cmd = Command::new("snip-rs")
-        .bin_name("snip-rs")
+    let cmd = Command::new("snip")
+        .bin_name("snip")
         .arg_required_else_help(true)
         .arg(
             Arg::new("read-only")
@@ -28,17 +27,19 @@ fn main() -> Result<(), Box<dyn Error>> {
             Command::new("add")
                 .about("Add new snip to database")
                 .arg_required_else_help(false)
-                .arg(Arg::new("file")
-                    .help("document text from file")
-                    .short('f')
-                    .long("file")
-                    .num_args(1)
+                .arg(
+                    Arg::new("file")
+                        .help("document text from file")
+                        .short('f')
+                        .long("file")
+                        .num_args(1),
                 )
-                .arg(Arg::new("name")
-                    .help("name of new document")
-                    .short('n')
-                    .long("name")
-                    .num_args(1)
+                .arg(
+                    Arg::new("name")
+                        .help("name of new document")
+                        .short('n')
+                        .long("name")
+                        .num_args(1),
                 ),
         )
         .subcommand(
@@ -49,14 +50,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     Command::new("add")
                         .about("add file to document")
                         .arg_required_else_help(true)
-                        .arg(
-                            Arg::new("snip_uuid")
-                                .num_args(1)
-                        )
-                        .arg(
-                            Arg::new("files")
-                                .action(ArgAction::Append)
-                        )
+                        .arg(Arg::new("snip_uuid").num_args(1))
+                        .arg(Arg::new("files").action(ArgAction::Append)),
                 )
                 .subcommand(
                     Command::new("ls")
@@ -91,23 +86,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .arg(
                             Arg::new("uuids")
                                 .help("partial/full uuids of documents to remove")
-                                .action(ArgAction::Append)
-                        )
+                                .action(ArgAction::Append),
+                        ),
                 )
                 .subcommand(
                     Command::new("write")
                         .about("write attachment to local file")
                         .arg_required_else_help(true)
-                        .arg(
-                            Arg::new("id")
-                                .num_args(1)
-                        )
-                        .arg(
-                            Arg::new("output")
-                                .short('o')
-                                .num_args(1)
-                        )
-                )
+                        .arg(Arg::new("id").num_args(1))
+                        .arg(Arg::new("output").short('o').num_args(1)),
+                ),
         )
         .subcommand(
             Command::new("get")
@@ -177,14 +165,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .short('x')
                         .long("exclude")
                         .value_delimiter(',')
-                        .action(ArgAction::Append)
+                        .action(ArgAction::Append),
                 )
                 .arg(
                     Arg::new("match-limit")
                         .help("limit the number of match excerpts displayed")
                         .long("match-limit")
                         .num_args(1)
-                        .action(ArgAction::Append)
+                        .action(ArgAction::Append),
                 )
                 .arg(
                     Arg::new("context")
@@ -193,26 +181,22 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .long("context")
                         .num_args(1)
                         .required(false)
-                        .action(ArgAction::Append)
+                        .action(ArgAction::Append),
                 )
                 .arg(
                     Arg::new("raw")
                         .help("do not strip newlines or returns from search excerpt")
                         .long("raw")
                         .num_args(0)
-                        .action(ArgAction::SetTrue)
+                        .action(ArgAction::SetTrue),
                 )
-                .arg(
-                    Arg::new("terms")
-                        .action(ArgAction::Append)
-                        .required(true)
-                )
+                .arg(Arg::new("terms").action(ArgAction::Append).required(true)),
         )
         .subcommand(
             Command::new("split")
                 .about("Split stdin into words")
                 .arg_required_else_help(false)
-                .arg(Arg::new("string"))
+                .arg(Arg::new("string")),
         )
         .subcommand(
             Command::new("stats")
@@ -222,14 +206,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                     Arg::new("all_terms")
                         .long("all-terms")
                         .num_args(0)
-                        .action(ArgAction::SetTrue)
-                )
+                        .action(ArgAction::SetTrue),
+                ),
         )
         .subcommand(
             Command::new("stem")
                 .about("Stem word from stdin")
                 .arg_required_else_help(false)
-                .arg(Arg::new("words"))
+                .arg(Arg::new("words")),
         );
 
     let matches = cmd.get_matches();
@@ -278,10 +262,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // ATTACH
     if let Some(("attach", sub_matches)) = matches.subcommand() {
-
         // ATTACH ADD
         if let Some(("add", attach_sub_matches)) = sub_matches.subcommand() {
-            let id_str = attach_sub_matches.get_one::<String>("snip_uuid").ok_or("parsing snip_uuid")?;
+            let id_str = attach_sub_matches
+                .get_one::<String>("snip_uuid")
+                .ok_or("parsing snip_uuid")?;
             let snip_uuid = snip::search_uuid(&conn, id_str)?;
             // let snip_uuid = Uuid::try_parse(id.as_str())?;
 
@@ -358,7 +343,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             let arg_id = attach_sub_matches.get_one::<String>("id");
             let id_str = match arg_id {
                 Some(v) => v,
-                None => return Err(Box::new(SnipError::General("no attachment id specified".to_string()))),
+                None => {
+                    return Err(Box::new(SnipError::General(
+                        "no attachment id specified".to_string(),
+                    )))
+                }
             };
             let id = snip::search_attachment_uuid(&conn, id_str)?;
             let a = snip::get_attachment_from_uuid(&conn, id)?;
@@ -461,14 +450,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(("ls", _)) = matches.subcommand() {
         // honor arguments if present
         if let Some(arg_matches) = matches.subcommand_matches("ls") {
-
             // check for limit
             let mut limit: usize = 0;
             if let Some(v) = arg_matches.get_one::<String>("number") {
                 limit = v.parse::<usize>()?;
             }
-            list_snips(&conn, limit, arg_matches.get_flag("l"), arg_matches.get_flag("t"))
-                .expect("could not list snips");
+            list_snips(
+                &conn,
+                limit,
+                arg_matches.get_flag("l"),
+                arg_matches.get_flag("t"),
+            )
+            .expect("could not list snips");
         } else {
             // default no args
             list_snips(&conn, 0, false, false).expect("could not list snips");
@@ -499,13 +492,16 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             // filter out duplicate search terms if present
             let mut seen_terms: Vec<String> = Vec::new();
-            let terms_include: Vec<String> = terms_stem.into_iter().filter(|x| {
-                if seen_terms.contains(x) {
-                    return false;
-                }
-                seen_terms.push(x.clone());
-                true
-            }).collect();
+            let terms_include: Vec<String> = terms_stem
+                .into_iter()
+                .filter(|x| {
+                    if seen_terms.contains(x) {
+                        return false;
+                    }
+                    seen_terms.push(x.clone());
+                    true
+                })
+                .collect();
 
             // exclusionary terms
             if let Some(args) = sub_matches.get_many::<String>("exclude") {
@@ -553,7 +549,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 for (i, term) in terms_include.iter().enumerate() {
                     if let Some(count) = terms_summary.get(term.as_str()) {
                         print!("{}: {}", term, count);
-                        if i != terms_summary.len() -1 {
+                        if i != terms_summary.len() - 1 {
                             print!(" ");
                         }
                     }
@@ -572,7 +568,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                             }
 
                             // this gathers an excerpt from the supplied position
-                            let excerpt = s.analysis.get_excerpt(pos, context_words, context_raw)?;
+                            let excerpt =
+                                s.analysis.get_excerpt(pos, context_words, context_raw)?;
                             excerpt.print();
                         }
                     }
@@ -663,7 +660,12 @@ fn create_heading(full_uuid: bool, show_time: bool) -> String {
 }
 
 /// Print a list of all documents in the database.
-fn list_snips( conn: &Connection, limit: usize, full_uuid: bool, show_time: bool, ) -> Result<(), Box<dyn Error>> {
+fn list_snips(
+    conn: &Connection,
+    limit: usize,
+    full_uuid: bool,
+    show_time: bool,
+) -> Result<(), Box<dyn Error>> {
     let ids = snip::uuid_list(conn, limit)?;
 
     // build and print dynamic heading
@@ -693,7 +695,8 @@ fn list_snips( conn: &Connection, limit: usize, full_uuid: bool, show_time: bool
 
 fn stem_vec(words: Vec<String>) -> Vec<String> {
     let stemmer = Stemmer::create(Algorithm::English);
-    words.iter()
+    words
+        .iter()
         .map(|w| w.to_lowercase())
         .map(|w| stemmer.stem(w.as_str()).to_string())
         .collect()
