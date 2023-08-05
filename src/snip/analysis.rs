@@ -1,6 +1,6 @@
 use colored::*;
-use std::error::Error;
 use rusqlite::Connection;
+use std::error::Error;
 use unicode_segmentation::UnicodeSegmentation;
 
 /// Analysis of the document derived from
@@ -27,7 +27,14 @@ pub struct Excerpt {
 impl Excerpt {
     /// Prints the formatted document excerpt
     pub fn print(&self) {
-        let position_range = format!("{}{}{}{}{}", "[", self.position_first, "-".bright_black(), self.position_last, "]");
+        let position_range = format!(
+            "{}{}{}{}{}",
+            "[",
+            self.position_first,
+            "-".bright_black(),
+            self.position_last,
+            "]"
+        );
 
         print!("    {} ", position_range.bright_black());
         print!("");
@@ -69,7 +76,12 @@ pub struct SnipWord {
 }
 
 impl SnipAnalysis {
-    pub fn get_excerpt(&self, pos: &usize, context_words: usize, raw: bool) -> Result<Excerpt, Box<dyn Error>> {
+    pub fn get_excerpt(
+        &self,
+        pos: &usize,
+        context_words: usize,
+        raw: bool,
+    ) -> Result<Excerpt, Box<dyn Error>> {
         let term = &self.words[*pos].stem;
         let mut excerpt = Excerpt {
             position_first: 0,
@@ -102,11 +114,12 @@ impl SnipAnalysis {
 
             if let Some(suffix) = &snip_word.suffix {
                 if i == positions.len() - 1 { // do not print the final suffix
-                    // break;
+                     // break;
                 }
                 let mut suffix_clean = suffix.clone();
                 if !raw {
-                    suffix_clean = suffix_clean.replace(['\n', '\r', char::from_u32(0x0au32).unwrap()], " "); // no newlines, etc
+                    suffix_clean =
+                        suffix_clean.replace(['\n', '\r', char::from_u32(0x0au32).unwrap()], " "); // no newlines, etc
                     suffix_clean = collapse_spaces(suffix_clean);
                 }
                 // remove repetitive whitespace to conform formatted text to search results
@@ -217,7 +230,7 @@ pub fn stats_index(conn: &Connection) -> Result<AnalysisStats, Box<dyn Error>> {
 
     // gather terms information
     let mut stmt = conn.prepare("SELECT SUM(count) FROM snip_index_rs")?;
-    let row = stmt.query_and_then([], |row| -> Result<usize, rusqlite::Error>{
+    let row = stmt.query_and_then([], |row| -> Result<usize, rusqlite::Error> {
         let total = row.get(0)?;
         Ok(total)
     })?;
@@ -227,7 +240,9 @@ pub fn stats_index(conn: &Connection) -> Result<AnalysisStats, Box<dyn Error>> {
     }
 
     // terms and their popularity across all
-    let mut stmt = conn.prepare("SELECT term, SUM(count) FROM snip_index_rs GROUP BY term ORDER BY SUM(count) DESC")?;
+    let mut stmt = conn.prepare(
+        "SELECT term, SUM(count) FROM snip_index_rs GROUP BY term ORDER BY SUM(count) DESC",
+    )?;
     let query_iter = stmt.query_and_then([], |row| -> Result<(String, u64), Box<dyn Error>> {
         let term: String = row.get(0)?;
         let count: usize = row.get(1)?;
@@ -255,10 +270,10 @@ pub fn stats_index(conn: &Connection) -> Result<AnalysisStats, Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::error::Error;
-    use uuid::Uuid;
     use crate::snip;
     use crate::snip::test_prep::*;
+    use std::error::Error;
+    use uuid::Uuid;
 
     #[test]
     fn test_get_term_context() -> Result<(), Box<dyn Error>> {

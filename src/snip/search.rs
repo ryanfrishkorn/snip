@@ -1,15 +1,15 @@
+use crate::snip::SnipError;
+use rusqlite::Connection;
 use std::collections::HashMap;
 use std::error::Error;
-use rusqlite::Connection;
 use uuid::Uuid;
-use crate::snip::SnipError;
 
 #[derive(Debug)]
 pub struct SearchQuery {
     pub terms_include: Vec<String>, // all terms must be present in a document
     pub terms_exclude: Vec<String>, // none of these terms may be present in a document
     pub terms_optional: Vec<String>, // neither mandatory nor disqualifying, but increase score if present
-    pub method: SearchMethod, // search the index, document text field, etc.
+    pub method: SearchMethod,        // search the index, document text field, etc.
 }
 
 #[derive(Debug)]
@@ -28,7 +28,7 @@ pub struct SearchQueryItem {
 pub enum SearchMethod {
     IndexStem, // index of stemmed terms parsed from document text
     IndexWord, // index of unmodified words parsed from document text
-    Literal, // direct matching on unmodified document text
+    Literal,   // direct matching on unmodified document text
 }
 
 impl SearchQueryResult {
@@ -42,10 +42,11 @@ impl SearchQueryResult {
 
 /// Search using a logical combination of terms that must all be present, terms that disqualify
 /// if present, and terms that are optional but add to the result score
-pub fn search_structured(conn: &Connection, search_query: SearchQuery) -> Result<SearchQueryResult, Box<dyn Error>> {
-    let mut query_result = SearchQueryResult {
-        items: Vec::new(),
-    };
+pub fn search_structured(
+    conn: &Connection,
+    search_query: SearchQuery,
+) -> Result<SearchQueryResult, Box<dyn Error>> {
+    let mut query_result = SearchQueryResult { items: Vec::new() };
     // let terms_positive_results: HashMap<String, Uuid> = HashMap::new();
 
     // INCLUDE
@@ -64,7 +65,6 @@ pub fn search_structured(conn: &Connection, search_query: SearchQuery) -> Result
         }
 
         // filter non-matching uuids
-        // include_results.iter_mut().filter(|id| result.contains(&id)).collect::<Vec<_>>();
         include_results.retain_mut(|id| result.contains(id));
     }
     // println!("include_results: {:?}", include_results);
@@ -106,7 +106,7 @@ pub fn search_structured(conn: &Connection, search_query: SearchQuery) -> Result
 
 #[derive(Debug)]
 pub struct SearchResult {
-    pub items: HashMap<Uuid, Vec<SearchTermPositions>>
+    pub items: HashMap<Uuid, Vec<SearchTermPositions>>,
 }
 
 #[derive(Debug)]
@@ -146,8 +146,13 @@ pub fn search_data(conn: &Connection, term: &String) -> Result<Vec<Uuid>, Box<dy
     Ok(results)
 }
 
-fn get_term_positions(conn: &Connection, id: &Uuid, term: &String) -> Result<Vec<usize>, Box<dyn Error>> {
-    let mut stmt = conn.prepare("SELECT positions FROM snip_index_rs WHERE uuid = :uuid AND term = :term")?;
+fn get_term_positions(
+    conn: &Connection,
+    id: &Uuid,
+    term: &String,
+) -> Result<Vec<usize>, Box<dyn Error>> {
+    let mut stmt =
+        conn.prepare("SELECT positions FROM snip_index_rs WHERE uuid = :uuid AND term = :term")?;
     let query_iter = stmt.query_map(&[(":uuid", &id.to_string()), (":term", term)], |row| {
         let positions = row.get::<_, String>(0)?;
         Ok(positions)
@@ -164,13 +169,19 @@ fn get_term_positions(conn: &Connection, id: &Uuid, term: &String) -> Result<Vec
 }
 
 /// Search the index and return uuids that contain term
-pub fn search_uuids_matching_term(conn: &Connection, term: &String) -> Result<Vec<Uuid>, Box<dyn Error>> {
+pub fn search_uuids_matching_term(
+    conn: &Connection,
+    term: &String,
+) -> Result<Vec<Uuid>, Box<dyn Error>> {
     let mut ids: Vec<Uuid> = Vec::new();
     let mut stmt = conn.prepare("SELECT uuid FROM snip_index_rs WHERE term = :term")?;
-    let rows = stmt.query_and_then(&[(":term", &term)], |row| -> Result<String, Box<dyn Error>> {
-        let id: String = row.get(0)?;
-        Ok(id)
-    })?;
+    let rows = stmt.query_and_then(
+        &[(":term", &term)],
+        |row| -> Result<String, Box<dyn Error>> {
+            let id: String = row.get(0)?;
+            Ok(id)
+        },
+    )?;
 
     for row in rows.flatten() {
         let id = Uuid::try_parse(row.as_str())?;
@@ -179,7 +190,10 @@ pub fn search_uuids_matching_term(conn: &Connection, term: &String) -> Result<Ve
     Ok(ids)
 }
 
-pub fn search_all_present(conn: &Connection, terms: Vec<String>) -> Result<SearchResult, Box<dyn Error>> {
+pub fn search_all_present(
+    conn: &Connection,
+    terms: Vec<String>,
+) -> Result<SearchResult, Box<dyn Error>> {
     let mut result = SearchResult {
         items: HashMap::new(),
     };
@@ -187,18 +201,24 @@ pub fn search_all_present(conn: &Connection, terms: Vec<String>) -> Result<Searc
     let mut result_prelim: Vec<SearchResultTerm> = Vec::new();
 
     for term in terms {
-        let mut stmt = conn.prepare("SELECT uuid, positions FROM snip_index_rs WHERE term = :term")?;
-        let query_iter = stmt.query_map(&[
-            (":term", &term),
-        ], |row| {
+        let mut stmt =
+            conn.prepare("SELECT uuid, positions FROM snip_index_rs WHERE term = :term")?;
+        let query_iter = stmt.query_map(&[(":term", &term)], |row| {
             let id = row.get::<_, String>(0)?;
             let pos_str = row.get::<_, String>(1)?;
             Ok((id, pos_str))
         })?;
         for id_str in query_iter.flatten() {
             let uuid = Uuid::try_parse(id_str.0.as_str())?;
-            let positions: Vec<usize> = id_str.1.split(',').map(|x| x.parse::<usize>().expect("parsing positions from db string")).collect();
-            result_prelim.push(SearchResultTerm{
+            let positions: Vec<usize> = id_str
+                .1
+                .split(',')
+                .map(|x| {
+                    x.parse::<usize>()
+                        .expect("parsing positions from db string")
+                })
+                .collect();
+            result_prelim.push(SearchResultTerm {
                 uuid,
                 term: term.clone(),
                 positions,
@@ -239,7 +259,10 @@ pub fn search_uuid(conn: &Connection, id_partial: &str) -> Result<Uuid, Box<dyn 
         if i == 0 {
             id_str = id.unwrap();
         } else {
-            return Err(Box::new(SnipError::UuidMultipleMatches(format!("provided partial {} returned multiple document uuids", id_partial))));
+            return Err(Box::new(SnipError::UuidMultipleMatches(format!(
+                "provided partial {} returned multiple document uuids",
+                id_partial
+            ))));
         }
     }
 
@@ -249,17 +272,20 @@ pub fn search_uuid(conn: &Connection, id_partial: &str) -> Result<Uuid, Box<dyn 
             Err(e) => Err(Box::new(e)),
         };
     }
-    Err(Box::new(SnipError::UuidNotFound(format!("document uuid not found using partial {}", id_partial))))
+    Err(Box::new(SnipError::UuidNotFound(format!(
+        "document uuid not found using partial {}",
+        id_partial
+    ))))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::snip;
+    use crate::snip::test_prep::*;
     use std::collections::HashMap;
     use std::error::Error;
     use uuid::Uuid;
-    use crate::snip;
-    use crate::snip::test_prep::*;
 
     #[test]
     fn test_search_all_present() -> Result<(), Box<dyn Error>> {
@@ -268,7 +294,11 @@ mod tests {
 
         let stemmer = rust_stemmers::Stemmer::create(rust_stemmers::Algorithm::English);
 
-        let terms: Vec<String> = vec!["lorem".to_string(), "ipsum".to_string(), "dolor".to_string()];
+        let terms: Vec<String> = vec![
+            "lorem".to_string(),
+            "ipsum".to_string(),
+            "dolor".to_string(),
+        ];
         let stems: Vec<String> = terms.iter().map(|w| stemmer.stem(w).to_string()).collect();
         let result = search_all_present(&conn, stems)?;
 
@@ -298,26 +328,26 @@ mod tests {
         };
 
         let expect = SearchQueryResult {
-            items: vec![
-                SearchQueryItem {
-                    uuid: Uuid::try_parse("412f7ca8-824c-4c70-80f0-4cca6371e45a")?,
-                    score: None,
-                    matches: HashMap::from([
-                        ("in".to_string(), vec![
-                            116, 159, 352, 730, 794,
-                            809, 1043, 1114, 1143, 1317,
-                            1341, 1362, 1397, 1417,
-                        ]),
-                        ("is".to_string(), vec![
-                            100, 110, 359, 591, 715,
-                            806, 818, 938, 954, 1023,
-                            1034, 1053, 1171, 1218, 1266,
-                            1370, 1377, 1387, 1393, 1414,
-                            1439, 1512, 1517, 1542, 1591,
-                        ]),
-                    ]),
-                }
-            ],
+            items: vec![SearchQueryItem {
+                uuid: Uuid::try_parse("412f7ca8-824c-4c70-80f0-4cca6371e45a")?,
+                score: None,
+                matches: HashMap::from([
+                    (
+                        "in".to_string(),
+                        vec![
+                            116, 159, 352, 730, 794, 809, 1043, 1114, 1143, 1317, 1341, 1362, 1397,
+                            1417,
+                        ],
+                    ),
+                    (
+                        "is".to_string(),
+                        vec![
+                            100, 110, 359, 591, 715, 806, 818, 938, 954, 1023, 1034, 1053, 1171,
+                            1218, 1266, 1370, 1377, 1387, 1393, 1414, 1439, 1512, 1517, 1542, 1591,
+                        ],
+                    ),
+                ]),
+            }],
         };
 
         let result = search_structured(&conn, query)?;
@@ -328,7 +358,10 @@ mod tests {
         let expect_item = expect.items.first().expect("getting first expect_item");
         let result_item = result.items.first().expect("getting first result_item");
         if expect_item.uuid != result_item.uuid {
-            panic!("expected uuid {} got {}", expect_item.uuid, result_item.uuid);
+            panic!(
+                "expected uuid {} got {}",
+                expect_item.uuid, result_item.uuid
+            );
         }
 
         if expect_item.matches != result_item.matches {

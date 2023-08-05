@@ -24,7 +24,10 @@ impl Attachment {
         let mut stmt = conn.prepare("DELETE FROM snip_attachment WHERE uuid = :uuid")?;
         let rows_affected = stmt.execute(&[(":uuid", &self.uuid.to_string())])?;
         if rows_affected != 1 {
-            return Err(Box::new(SnipError::General(format!("expected 1 row affected, got {}", rows_affected))));
+            return Err(Box::new(SnipError::General(format!(
+                "expected 1 row affected, got {}",
+                rows_affected
+            ))));
         }
         Ok(())
     }
@@ -34,7 +37,10 @@ impl Attachment {
         // check overwrite
         let p = Path::new(path);
         if p.exists() {
-            return Err(Box::new(SnipError::General(format!("refusing to overwrite existing file {}", path))));
+            return Err(Box::new(SnipError::General(format!(
+                "refusing to overwrite existing file {}",
+                path
+            ))));
         }
 
         fs::write(path, &self.data)?;
@@ -75,12 +81,20 @@ fn attachment_from_db(
 }
 
 /// Add an attachment to the database and attach to supplied document Uuid
-pub fn add_attachment(conn: &Connection, snip_uuid: Uuid, path: &Path) -> Result<(), Box<dyn Error>> {
+pub fn add_attachment(
+    conn: &Connection,
+    snip_uuid: Uuid,
+    path: &Path,
+) -> Result<(), Box<dyn Error>> {
     // check existence of file
     let uuid = Uuid::new_v4();
     let timestamp_utc = chrono::Utc::now();
     let timestamp = timestamp_utc.fixed_offset();
-    let name = path.file_name().ok_or("parsing attachment basename")?.to_string_lossy().to_string();
+    let name = path
+        .file_name()
+        .ok_or("parsing attachment basename")?
+        .to_string_lossy()
+        .to_string();
     let data = fs::read(path)?;
     let size = data.len();
 
@@ -121,7 +135,14 @@ pub fn get_attachment_from_uuid(conn: &Connection, id: Uuid) -> Result<Attachmen
         // read data first using rowid
         let row_id: i64 = row.get(5)?;
         let data = attachment_data_from_db(conn, row_id)?;
-        attachment_from_db(row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, data)
+        attachment_from_db(
+            row.get(0)?,
+            row.get(1)?,
+            row.get(2)?,
+            row.get(3)?,
+            row.get(4)?,
+            data,
+        )
     })?;
 
     if let Some(a) = rows.next() {
@@ -168,7 +189,10 @@ pub fn search_attachment_uuid(conn: &Connection, id_partial: &str) -> Result<Uui
         if i == 0 {
             id_str = id.unwrap();
         } else {
-            return Err(Box::new(SnipError::UuidMultipleMatches(format!("provided partial {} returned multiple attachment uuids", id_partial))));
+            return Err(Box::new(SnipError::UuidMultipleMatches(format!(
+                "provided partial {} returned multiple attachment uuids",
+                id_partial
+            ))));
         }
     }
 
@@ -178,15 +202,18 @@ pub fn search_attachment_uuid(conn: &Connection, id_partial: &str) -> Result<Uui
             Err(e) => Err(Box::new(e)),
         };
     }
-    Err(Box::new(SnipError::UuidNotFound(format!("attachment uuid not found using partial {}", id_partial))))
+    Err(Box::new(SnipError::UuidNotFound(format!(
+        "attachment uuid not found using partial {}",
+        id_partial
+    ))))
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::fs;
     use crate::snip::test_prep::*;
     use crate::snip::SnipError;
+    use std::fs;
 
     #[test]
     fn test_add_attachment() -> Result<(), Box<dyn Error>> {
@@ -201,7 +228,10 @@ mod test {
         let attachments = get_attachment_all(&conn)?;
         for id in attachments {
             let a = get_attachment_from_uuid(&conn, id)?;
-            println!("uuid: {} snip_uud: {} size: {} name: {}", a.uuid, a.snip_uuid, a.size, a.name);
+            println!(
+                "uuid: {} snip_uud: {} size: {} name: {}",
+                a.uuid, a.snip_uuid, a.size, a.name
+            );
         }
         Ok(())
     }
@@ -214,7 +244,9 @@ mod test {
         let a = get_attachment_from_uuid(&conn, id)?;
 
         if a.uuid != id {
-            return Err(Box::new(SnipError::UuidNotFound(format!("uuid expected: {} got: {}", id, a.uuid).to_string())));
+            return Err(Box::new(SnipError::UuidNotFound(
+                format!("uuid expected: {} got: {}", id, a.uuid).to_string(),
+            )));
         }
         Ok(())
     }
@@ -229,7 +261,9 @@ mod test {
 
         // attempt to retrieve again - should be missing
         if get_attachment_from_uuid(&conn, id).is_ok() {
-            return Err(Box::new(SnipError::General("found attachment in database after attempted removal".to_string())));
+            return Err(Box::new(SnipError::General(
+                "found attachment in database after attempted removal".to_string(),
+            )));
         }
         Ok(())
     }
@@ -280,7 +314,9 @@ mod test {
         let p = Path::new(&output_default);
         a.write(output_default)?;
         if !p.exists() {
-            return Err(Box::new(SnipError::General(format!("expected file {output_default} to exist"))));
+            return Err(Box::new(SnipError::General(format!(
+                "expected file {output_default} to exist"
+            ))));
         }
         fs::remove_file(p)?;
 
@@ -288,7 +324,9 @@ mod test {
         let p = Path::new(&output_named);
         a.write(output_named)?;
         if !p.exists() {
-            return Err(Box::new(SnipError::General(format!("expected file {output_named} to exist"))));
+            return Err(Box::new(SnipError::General(format!(
+                "expected file {output_named} to exist"
+            ))));
         }
         fs::remove_file(p)?;
 

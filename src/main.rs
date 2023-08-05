@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .short('n')
                         .long("name")
                         .num_args(1),
-                )
+                ),
         )
         .subcommand(
             Command::new("attach")
@@ -241,7 +241,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     // process all subcommands as in: https://docs.rs/clap/latest/clap/_derive/_cookbook/git/index.html
     // ADD
     if let Some(("add", sub_matches)) = matches.subcommand() {
-
         // document text
         let mut text: String = String::new();
         match sub_matches.get_one::<String>("file") {
@@ -689,11 +688,7 @@ impl ListHeading {
         let name = name.to_string();
 
         // create and append position to self
-        let position = ListHeadingPosition {
-            name,
-            width,
-            align,
-        };
+        let position = ListHeadingPosition { name, width, align };
 
         self.columns.push(position);
     }
@@ -733,14 +728,14 @@ impl ListHeading {
                             suffix.push(' ');
                         }
                     }
-                },
+                }
                 ListHeadingAlignment::Right => {
                     if column.width >= column.name.len() {
                         for _ in 0..(column.width - column.name.len()) {
                             prefix.push(' ');
                         }
                     }
-                },
+                }
             }
 
             output = format!("{}{}{}{} ", output, prefix, column.name, suffix);
@@ -754,7 +749,6 @@ fn list_items(conn: &Connection, heading: ListHeading, limit: usize) -> Result<(
         ListHeadingKind::Document => snip::uuid_list(conn, limit)?,
         ListHeadingKind::Attachment => snip::get_attachment_all(conn)?,
     };
-
 
     for id in ids {
         // establish required data
@@ -772,7 +766,7 @@ fn list_items(conn: &Connection, heading: ListHeading, limit: usize) -> Result<(
                 time = document.timestamp.to_string();
                 size = document.text.len().to_string();
                 name = document.name.clone();
-            },
+            }
             ListHeadingKind::Attachment => {
                 let attachment = snip::get_attachment_from_uuid(conn, id)?;
 
@@ -780,7 +774,7 @@ fn list_items(conn: &Connection, heading: ListHeading, limit: usize) -> Result<(
                 time = attachment.timestamp.to_string();
                 size = attachment.size.to_string();
                 name = attachment.name.clone();
-            },
+            }
         };
         // let document = snip::get_from_uuid(conn, &id)?;
 
@@ -791,16 +785,18 @@ fn list_items(conn: &Connection, heading: ListHeading, limit: usize) -> Result<(
                 "time" => time.bright_black(),
                 "size" => size.white(),
                 "name" => name.clone().white(),
-                _ => return Err(Box::new(SnipError::General("invalid column name supplied".to_string()))),
+                _ => {
+                    return Err(Box::new(SnipError::General(
+                        "invalid column name supplied".to_string(),
+                    )))
+                }
             };
             // eprintln!("prefix: {} suffix: {}", col.prefix, col.suffix);
             match col.name.as_str() {
-                "uuid" => {
-                    match col.width {
-                        v if v <= 8 => print!("{} ", snip::split_uuid(&uuid)[0].bright_blue()),
-                        _ => print!("{} ", uuid.to_string().bright_blue()),
-                    }
-                }
+                "uuid" => match col.width {
+                    v if v <= 8 => print!("{} ", snip::split_uuid(&uuid)[0].bright_blue()),
+                    _ => print!("{} ", uuid.to_string().bright_blue()),
+                },
                 "size" => print!("{:>9} ", str),
                 _ => print!("{} ", str),
             }
