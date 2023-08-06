@@ -39,8 +39,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .help("name of new document")
                         .short('n')
                         .long("name")
-                        .num_args(1),
+                        .num_args(1)
+                        .action(ArgAction::Set),
                 ),
+        )
+        .subcommand(
+            Command::new("rename")
+                .about("Rename document")
+                .arg_required_else_help(true)
+                .arg(Arg::new("uuid").help("partial/full id of document"))
+                .arg(Arg::new("name").help("new name")),
         )
         .subcommand(
             Command::new("attach")
@@ -504,6 +512,27 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
+    // RENAME
+    if let Some(("rename", sub_matches)) = matches.subcommand() {
+        let id_str = match sub_matches.get_one::<String>("uuid") {
+            Some(v) => v.to_string(),
+            None => return Err(Box::new(SnipError::General("missing uuid".to_string()))),
+        };
+        let id = snip::search_uuid(&conn, id_str.as_str())?;
+
+        // new name
+        let name = match sub_matches.get_one::<String>("name") {
+            Some(v) => v.to_string(),
+            None => return Err(Box::new(SnipError::General("missing name".to_string()))),
+        };
+
+        let mut s = snip::get_from_uuid(&conn, &id)?;
+        s.name = name;
+
+        // write changes
+        s.update(&conn)?;
+    }
+
     // RM
     if let Some(("rm", sub_matches)) = matches.subcommand() {
         if let Some(args) = sub_matches.get_many::<String>("ids") {
@@ -512,8 +541,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             for (i, id_str) in ids_str.iter().enumerate() {
                 // obtain full id
                 let id = snip::search_uuid(&conn, id_str)?;
+                let s = snip::get_from_uuid(&conn, &id)?;
                 snip::remove_snip(&conn, id)?;
-                println!("{}/{} removed {}", i + 1, ids_str.len(), id);
+                println!("{}/{} removed {} {}", i + 1, ids_str.len(), id, s.name);
             }
         }
     }
@@ -757,7 +787,6 @@ fn list_items(conn: &Connection, heading: ListHeading, limit: usize) -> Result<(
         let size: String;
         let name: String;
 
-        // let document = snip::get_from_uuid(conn, &id)?
         match heading.kind {
             ListHeadingKind::Document => {
                 let document = snip::get_from_uuid(conn, &id)?;
@@ -776,7 +805,6 @@ fn list_items(conn: &Connection, heading: ListHeading, limit: usize) -> Result<(
                 name = attachment.name.clone();
             }
         };
-        // let document = snip::get_from_uuid(conn, &id)?;
 
         // check if specified
         for col in &heading.columns {

@@ -244,6 +244,18 @@ impl Snip {
         Ok(())
     }
 
+    /// Writes all fields to the database, overwriting existing data
+    pub fn update(&self, conn: &Connection) -> Result<(), Box<dyn Error>> {
+        let mut stmt = conn.prepare("UPDATE snip SET (data, timestamp, name) = (:data, :timestamp, :name) WHERE uuid = :uuid")?;
+        let _ = stmt.execute(&[
+            (":data", &self.text.to_string()),
+            (":timestamp", &self.timestamp.to_rfc3339()),
+            (":name", &self.name.to_string()),
+            (":uuid", &self.uuid.to_string()),
+        ])?;
+        Ok(())
+    }
+
     /// Writes an index for a word to the database for searching
     fn write_word_index(
         &mut self,
@@ -649,6 +661,32 @@ mod tests {
                 "document is still present after attempted deletion".to_string(),
             )));
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_update() -> Result<(), Box<dyn Error>> {
+        let conn = prepare_database()?;
+        let id = Uuid::try_parse(ID_STR)?;
+
+        // this is the data that will be written
+        let expect = Snip {
+            uuid: id,
+            name: "Test Name".to_string(),
+            text: "Test Text".to_string(),
+            timestamp: chrono::Local::now().fixed_offset(),
+            analysis: SnipAnalysis { words: Vec::new() }, // dynamic data, not database
+            attachments: Vec::new(),                      // dynamic data, not database
+        };
+        expect.update(&conn)?;
+
+        // verify
+        let s = get_from_uuid(&conn, &id)?;
+
+        assert_eq!(expect.name, s.name);
+        assert_eq!(expect.text, s.text);
+        assert_eq!(expect.timestamp, s.timestamp);
+
         Ok(())
     }
 }
