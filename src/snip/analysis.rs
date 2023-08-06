@@ -73,6 +73,7 @@ pub struct SnipWord {
     pub prefix: Option<String>,
     pub suffix: Option<String>,
     pub index: Option<WordIndex>,
+    pub offset: usize,
 }
 
 impl SnipAnalysis {

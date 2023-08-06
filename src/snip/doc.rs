@@ -144,92 +144,69 @@ impl Snip {
     /// scans and assigns all prefix and suffix strings to all analyzed words
     pub fn scan_fragments(&mut self) -> Result<(), SnipError> {
         // scan the document for tokens, in order collecting surrounding data for each token
-        let mut fragments: Vec<(usize, usize)> = Vec::new();
         let mut prefixes: Vec<Option<String>> = Vec::new();
-        let mut suffix: Option<String> = None; // the suffix of the last word
-        let mut offset: usize = 0; // last position of cursor
-        let text_graphs = self.text.graphemes(true).collect::<Vec<_>>();
+        let mut suffixes: Vec<Option<String>> = Vec::new();
+        let mut offset: usize = 0;
+        let mut suffix_last: Option<String> = None;
 
-        for (i, word) in self.analysis.words.iter().enumerate() {
-            // scan characters until word is encountered
-            // println!("finding word: {} len: {} offset: {}", word.word, word.word.len(), offset);
-            // start search from offset
-            let mut cur = 0;
+        // Iterate through each of the words present.
+        for word in self.analysis.words.windows(2) {
+            let next_word = word.get(1);
 
-            // find index of word
-            let text_slice: Vec<&str> = match text_graphs.get(offset..) {
-                Some(v) => v.to_vec(),
-                None => break, // no more data left
-            };
+            // default is to scan to the end of string unless there is a next word
+            let mut offset_next = self.text.len();
+            if let Some(next_word) = &next_word {
+                offset_next = next_word.offset;
+            }
 
-            let offset_match = match find_by_graph(&word.word, text_slice) {
-                Some(v) => v,
-                None => break, // we must be at the end here
-            };
-            // println!("match cursor offset: {}", offset_match);
-            let fragment_pre_len = offset_match - cur;
-            // println!("fragment_pre_len: {}", fragment_pre_len);
-
+            // PREFIX
             let mut prefix: Option<String> = None;
-            // len > 0 means that a prefix exists
-            if fragment_pre_len > 0 {
-                // read the prefix length characters
-                let mut prefix_buf: Vec<String> = Vec::new();
-                for (i, c) in text_graphs[offset..].iter().enumerate() {
-                    if i < cur {
-                        // println!("skip");
-                        continue;
-                    }
-                    if i < fragment_pre_len {
-                        // println!("cursor: {} push: {}", cur, *c);
-                        prefix_buf.push(c.to_string());
-                        cur += 1;
-                    } else {
-                        break;
-                    }
+            let read_prefix_from: usize = offset;
+            let read_prefix_to: usize = word[0].offset;
+
+            // The previous suffix should always be present, except at the start of the first iteration.
+            if let Some(s) = suffix_last.clone() {
+                prefix = Some(s);
+            } else {
+                let prefix_slice = self.text.get(read_prefix_from..read_prefix_to);
+                if let Some(p) = prefix_slice {
+                    prefix = Some(p.to_string());
                 }
-                // println!("prefix_buf: \"{}\"", prefix_buf);
-                prefix = Some(prefix_buf.concat());
             }
             prefixes.push(prefix);
 
-            // build fragment
-            let frag = (offset, offset + cur);
-            fragments.push(frag);
+            // SUFFIX
+            let mut suffix: Option<String> = None;
+            let read_suffix_from: usize = word[0].offset + word[0].word.graphemes(true).count();
+            let read_suffix_to: usize = offset_next;
 
-            // println!("iteration: {} offset: {} word_len: {} cursor: {} word: {}", i, offset, word.word.graphemes(true).count(), cur, word.word);
-            offset = offset + cur + word.word.graphemes(true).count(); // set offset to current cursor value
+            let suffix_slice = self.text.get(read_suffix_from..read_suffix_to);
+            if let Some(s) = suffix_slice {
+                suffix_last = Some(s.to_string());
+                suffix = suffix_last.clone();
+            }
+            suffixes.push(suffix);
 
-            // LAST ITERATION
-            if i == self.analysis.words.len() - 1 {
-                // offset less than length indicates a suffix remains
-                if offset < text_graphs.len() {
-                    let mut suffix_buf: Vec<String> = Vec::new();
-                    for c in text_graphs[offset..].iter() {
-                        suffix_buf.push(c.to_string());
-                    }
-                    suffix = match suffix_buf.is_empty() {
-                        true => None,
-                        false => Some(suffix_buf.iter().map(|x| x.to_owned()).collect::<String>()),
-                    };
-                    // println!("final suffix: {:?}", suffix);
-                }
+            // println!("word: {} word.offset: {}", word[1].word, word[1].offset);
+            offset = word[0].offset + word[0].word.graphemes(true).count(); // set offset to after the current word
+        }
+        // push last suffix
+        if let Some(last_word) = self.analysis.words.last() {
+            let read_from = last_word.offset + last_word.word.graphemes(true).count();
+            if let Some(last_suffix) = self.text.get(read_from..) {
+                suffixes.push(Some(last_suffix.to_string()));
             }
         }
 
         // assign prefixes
         for (i, prefix) in prefixes.iter().enumerate() {
             self.analysis.words[i].prefix = prefix.to_owned();
-            if i > 0 {
-                // set previous suffix to the current prefix
-                self.analysis.words[i - 1].suffix = prefix.to_owned();
-            }
+        }
+        // assign suffixes
+        for (i, suffix) in suffixes.iter().enumerate() {
+            self.analysis.words[i].suffix = suffix.to_owned();
         }
 
-        // assign last suffix unless the index is zero (which would underflow)
-        if !prefixes.is_empty() {
-            self.analysis.words[prefixes.len() - 1].suffix = suffix;
-        }
         Ok(())
     }
 
@@ -237,18 +214,18 @@ impl Snip {
     pub fn split_words(&mut self) -> Result<(), SnipError> {
         let words = self
             .text
-            .unicode_words()
-            .map(|x| x.to_string())
-            .collect::<Vec<String>>();
+            .unicode_word_indices()
+            .collect::<Vec<(usize, &str)>>();
 
-        for word in words {
+        for (offset, word) in words {
             // create DocWord
             let word_analyzed = SnipWord {
-                word,
+                word: word.to_string(),
                 stem: String::new(),
                 prefix: None, // these are scanned later
                 suffix: None, // these are scanned later
                 index: None,  // this is built later
+                offset,
             };
             self.analysis.words.push(word_analyzed);
         }
@@ -326,7 +303,7 @@ pub fn create_index_table(conn: &Connection) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-// Returns the character index of a fully matched word
+/// Returns the grapheme index at which `word` is fully matched within the containing `text`.
 pub fn find_by_graph(word: &str, text: Vec<&str>) -> Option<usize> {
     let word_graphs: Vec<&str> = word.graphemes(true).collect();
     let mut match_buf: Vec<&str> = Vec::new();
