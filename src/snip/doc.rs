@@ -344,13 +344,19 @@ pub fn generate_name(text: &String, count: usize) -> Result<String, Box<dyn Erro
     let mut name = String::new();
 
     let words: Vec<&str> = text.unicode_words().collect();
-    if words.len() < count {
-        return Err(Box::new(SnipError::General(format!(
-            "could not parse {} unicode words from supplied text",
-            count
-        ))));
+
+    // ensure at least one word is present
+    if words.is_empty() {
+        return Err(Box::new(SnipError::General(
+            "The document has no words, so a name cannot be generated.".to_string(),
+        )));
     }
 
+    if words.len() < count {
+        return Ok(words.join(" ").to_string());
+    }
+
+    // return desired count
     for (i, word) in words.iter().enumerate() {
         if i == count {
             break;
