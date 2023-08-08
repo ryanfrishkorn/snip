@@ -135,37 +135,28 @@ impl SnipAnalysis {
     /// get vector positions of desired context including term position
     fn get_term_context_positions(&self, position: usize, count: usize) -> Vec<usize> {
         let mut context: Vec<usize> = Vec::new();
-        let mut context_prefix: Vec<usize> = Vec::new();
-        let mut context_suffix: Vec<usize> = Vec::new();
         // println!("term: \"{}\" position: {}", &self.words[position].word, position);
 
-        // check bounds of context start
-        let context_prefix_pos: usize = match position as i64 - count as i64 {
+        // Check bounds of context start. A negative difference indicates we have exceeded
+        // the bounds of the document beginning. In that case, return index zero onwards.
+        let context_start_pos: usize = match position as i64 - count as i64 {
             x if x <= 0 => 0, // use position zero
             x => x as usize,
         };
-        // println!("context_prefix_pos: {}", context_prefix_pos);
+        // println!("context_prefix_pos: {}", context_start_pos);
 
-        // check bounds of context stop
-        let context_suffix_pos: usize = match position + 1 {
+        // Similarly, check bounds of context stop. If the desired count of terms extends beyond
+        // the end of the document, return up to the final term.
+        let context_stop_pos: usize = match position + count + 1 {
             x if x > self.words.len() => self.words.len(),
             x => x,
         };
-        // println!("context_suffix_pos: {}", context_suffix_pos);
+        // println!("context_suffix_pos: {}", context_stop_pos);
 
-        for (i, _) in self.words.iter().enumerate() {
-            if i >= context_prefix_pos && i < position {
-                context_prefix.push(i);
-            }
-            if i > position && i < context_suffix_pos + count {
-                context_suffix.push(i);
-            }
+        // concatenate all positions
+        for i in context_start_pos..context_stop_pos {
+            context.push(i);
         }
-        // println!("prefix: {:?}", context_prefix);
-        context.append(&mut context_prefix);
-        context.push(position);
-        // println!("suffix: {:?}", context_suffix);
-        context.append(&mut context_suffix);
         context
     }
 
