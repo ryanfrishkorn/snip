@@ -1,5 +1,6 @@
 pub mod snip;
 
+use atty;
 use crate::snip::{SearchMethod, SearchQuery, Snip, SnipAnalysis, SnipError};
 use clap::{Arg, ArgAction, Command};
 use colored::*;
@@ -342,7 +343,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             header.add("name", 0, ListHeadingAlignment::Left);
 
             // print listing
-            eprintln!("{}", header.build().bright_black());
+            if atty::is(atty::Stream::Stdout) {
+                eprintln!("{}", header.build().bright_black());
+            }
             list_items(&conn, header, 0)?;
         }
 
@@ -507,7 +510,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 limit = v.parse::<usize>()?;
             }
 
-            eprintln!("{}", header.build().bright_black());
+            if atty::is(atty::Stream::Stdout) {
+                eprintln!("{}", header.build().bright_black());
+            }
             list_items(&conn, header, limit)?;
         }
     }
