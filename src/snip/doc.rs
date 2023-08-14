@@ -238,6 +238,12 @@ impl Snip {
 
         for word_analyzed in self.analysis.words.iter_mut() {
             let word_tmp = word_analyzed.word.to_lowercase().clone();
+
+            // Most stemmers require apostrophe in ASCII for compatibility. While we
+            // make the transformation here so that stems are generated correctly, we
+            // want to avoid changing the original data.
+            let word_tmp = word_tmp.replace("’", "'");
+
             let stem = stemmer.stem(word_tmp.as_str());
             word_analyzed.stem = stem.to_string();
         }
