@@ -1,4 +1,7 @@
 # snip
+
+[![Build status](https://github.com/ryanfrishkorn/snip-rs/actions/workflows/rust.yml/badge.svg)]
+
 ### A simple personal data tool, backed with SQLite, full-text searchable.
 The snip utility stores and retrieves text and binary data. A basic document is plain text, and binary data can be attached to the document. Text in the body of the document is automatically analyzed and pushed to a term-matrix stored in SQLite. This allows for very fast searching. Documents have a UUID that is generated upon creation.
 
