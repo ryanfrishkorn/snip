@@ -1,7 +1,9 @@
 # snip
 
-![Build status](https://github.com/ryanfrishkorn/snip-rs/actions/workflows/build.yml/badge.svg)
-![Test status](https://github.com/ryanfrishkorn/snip-rs/actions/workflows/test.yml/badge.svg)
+[![Build status](https://github.com/ryanfrishkorn/snip-rs/actions/workflows/build.yml/badge.svg)](https://github.com/ryanfrishkorn/snip-rs/actions/workflows/build.yml)
+[![Test status](https://github.com/ryanfrishkorn/snip-rs/actions/workflows/test.yml/badge.svg)](https://github.com/ryanfrishkorn/snip-rs/actions/workflows/test.yml)
+
+![Screenshot](./screenshot.png)
 
 ### A simple personal data tool, backed with SQLite, full-text searchable.
 The snip utility stores and retrieves text and binary data. A basic document is plain text, and binary data can be attached to the document. Text in the body of the document is automatically analyzed and pushed to a term-matrix stored in SQLite. This allows for very fast searching. Documents have a UUID that is generated upon creation.
