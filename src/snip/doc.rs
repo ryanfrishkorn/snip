@@ -177,7 +177,7 @@ impl Snip {
 
             // SUFFIX
             let mut suffix: Option<String> = None;
-            let read_suffix_from: usize = word[0].offset + word[0].word.graphemes(true).count();
+            let read_suffix_from: usize = word[0].offset + word[0].word.len();
             let read_suffix_to: usize = offset_next;
 
             let suffix_slice = self.text.get(read_suffix_from..read_suffix_to);
@@ -188,11 +188,11 @@ impl Snip {
             suffixes.push(suffix);
 
             // println!("word: {} word.offset: {}", word[1].word, word[1].offset);
-            offset = word[0].offset + word[0].word.graphemes(true).count(); // set offset to after the current word
+            offset = word[0].offset + word[0].word.len(); // set offset to after the current word
         }
         // push last suffix
         if let Some(last_word) = self.analysis.words.last() {
-            let read_from = last_word.offset + last_word.word.graphemes(true).count();
+            let read_from = last_word.offset + last_word.word.len();
             if let Some(last_suffix) = self.text.get(read_from..) {
                 suffixes.push(Some(last_suffix.to_string()));
             }
