@@ -10,6 +10,7 @@ pub struct SearchQuery {
     pub terms_exclude: Vec<String>, // none of these terms may be present in a document
     pub terms_optional: Vec<String>, // neither mandatory nor disqualifying, but increase score if present
     pub method: SearchMethod,        // search the index, document text field, etc.
+    pub uuids: Vec<Uuid>,
 }
 
 #[derive(Debug)]
@@ -47,43 +48,50 @@ pub fn search_structured(
     search_query: SearchQuery,
 ) -> Result<SearchQueryResult, Box<dyn Error>> {
     let mut query_result = SearchQueryResult { items: Vec::new() };
-    // let terms_positive_results: HashMap<String, Uuid> = HashMap::new();
-
-    // INCLUDE
     let mut include_results: Vec<Uuid> = Vec::new();
-    for (i, term) in search_query.terms_include.iter().enumerate() {
-        let mut result = search_uuids_matching_term(conn, term)?;
-        // println!("iter result: {:?}", result);
-        // push all results on first run for next iteration comparison
-        if i == 0 {
-            include_results.append(&mut result);
-            // break if there was only one term
-            if search_query.terms_include.len() == 1 {
-                break;
-            }
-            continue;
-        }
-
-        // filter non-matching uuids
-        include_results.retain_mut(|id| result.contains(id));
-    }
-    // println!("include_results: {:?}", include_results);
-
-    // EXCLUDE
     let mut exclude_results: Vec<Uuid> = Vec::new();
-    for term in search_query.terms_exclude {
-        let result = search_uuids_matching_term(conn, &term)?;
-        for r in result {
-            if !exclude_results.contains(&r) {
-                exclude_results.push(r);
+
+    // if search uuids are not set, search all documents
+    if search_query.uuids.is_empty() {
+        // INCLUDE
+        for (i, term) in search_query.terms_include.iter().enumerate() {
+            let mut result = search_uuids_matching_term(conn, term)?;
+            // println!("iter result: {:?}", result);
+            // push all results on first run for next iteration comparison
+            if i == 0 {
+                include_results.append(&mut result);
+                // break if there was only one term
+                if search_query.terms_include.len() == 1 {
+                    break;
+                }
+                continue;
+            }
+
+            // filter non-matching uuids
+            include_results.retain_mut(|id| result.contains(id));
+        }
+        // println!("include_results: {:?}", include_results);
+
+        // EXCLUDE
+        for term in search_query.terms_exclude {
+            let result = search_uuids_matching_term(conn, &term)?;
+            for r in result {
+                if !exclude_results.contains(&r) {
+                    exclude_results.push(r);
+                }
             }
         }
-    }
-    // println!("exclude_results: {:?}", exclude_results);
+        // println!("exclude_results: {:?}", exclude_results);
 
-    // SUBTRACT EXCLUDE FROM INCLUDE
-    include_results.retain_mut(|id| !exclude_results.contains(id));
-    // println!("filtered_results: {:?}", include_results);
+        // SUBTRACT EXCLUDE FROM INCLUDE
+        include_results.retain_mut(|id| !exclude_results.contains(id));
+        // println!("filtered_results: {:?}", include_results);
+    } else {
+        // restrict search to supplied uuids
+        for uuid in search_query.uuids {
+            include_results.push(uuid);
+        }
+    }
 
     // BUILD OUTPUT
     for uuid in include_results {
@@ -325,6 +333,7 @@ mod tests {
             terms_exclude: vec!["fuzz".to_string()],
             terms_optional: vec![],
             method: SearchMethod::IndexStem,
+            uuids: vec![],
         };
 
         let expect = SearchQueryResult {
@@ -366,6 +375,76 @@ mod tests {
 
         if expect_item.matches != result_item.matches {
             panic!("expected item {:?} got {:?}", expect_item, result_item);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_search_structured_uuids() -> Result<(), Box<dyn Error>> {
+        let conn = prepare_database()?;
+        snip::index_all_items(&conn)?;
+
+        // Lorem ipsum
+        let id: Uuid = Uuid::try_parse(ID_STR)?;
+        let query = SearchQuery {
+            terms_include: vec!["lorem".to_string(), "ipsum".to_string()],
+            terms_exclude: vec!["fuzz".to_string()],
+            terms_optional: vec![],
+            method: SearchMethod::IndexStem,
+            uuids: vec![id],
+        };
+        let result = search_structured(&conn, query)?;
+        // println!("result: {:#?}", result);
+        let item = result.items.get(0).unwrap();
+        // check length of positions for "lorem"
+        let item_lorem_len = item.matches.get("lorem").unwrap().len();
+        let item_lorem_len_expect = 2;
+        if item_lorem_len != item_lorem_len_expect {
+            panic!(
+                "expected {} matches for 'lorem', got {}",
+                item_lorem_len_expect, item_lorem_len
+            );
+        }
+        // check length of positions for "ipsum"
+        let item_ipsum_len = item.matches.get("ipsum").unwrap().len();
+        let item_ipsum_len_expect = 5;
+        if item_ipsum_len != item_ipsum_len_expect {
+            panic!(
+                "expected {} matches for 'ipsum', got {}",
+                item_ipsum_len_expect, item_ipsum_len
+            );
+        }
+
+        // Fuzzing document
+        let id = Uuid::try_parse("990a917e-66d3-404b-9502-e8341964730b")?;
+        let query = SearchQuery {
+            terms_include: vec!["fuzz".to_string(), "random".to_string()],
+            terms_exclude: vec!["lorem".to_string()],
+            terms_optional: vec![],
+            method: SearchMethod::IndexStem,
+            uuids: vec![id],
+        };
+        let result = search_structured(&conn, query)?;
+        // println!("result: {:#?}", result);
+        // check length of positions for "fuzz"
+        let item = result.items.get(0).unwrap();
+        let item_fuzz_len = item.matches.get("fuzz").unwrap().len();
+        let item_fuzz_len_expect = 7;
+        if item_fuzz_len != item_fuzz_len_expect {
+            panic!(
+                "expected {} matches for 'fuzz', got {}",
+                item_fuzz_len_expect, item_fuzz_len
+            );
+        }
+        // check length of positions for "random"
+        let item_random_len = item.matches.get("random").unwrap().len();
+        let item_random_len_expect = 1;
+        if item_random_len != item_random_len_expect {
+            panic!(
+                "expected {} matches for 'random', got {}",
+                item_random_len_expect, item_random_len
+            );
         }
 
         Ok(())

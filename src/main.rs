@@ -230,6 +230,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .num_args(0)
                         .action(ArgAction::SetTrue),
                 )
+                .arg(
+                    Arg::new("uuid")
+                        .help("search for matches in specified documents only")
+                        .short('u')
+                        .long("uuid")
+                        .action(ArgAction::Append)
+                        .required(false)
+                        .value_delimiter(','),
+                )
                 .arg(Arg::new("terms").action(ArgAction::Append).required(true)),
         )
         .subcommand(
@@ -601,6 +610,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                 })
                 .collect();
 
+            // restrict to specific uuids if supplied
+            let mut uuids: Vec<Uuid> = Vec::new();
+            if let Some(all_ids_str) = sub_matches.get_many::<String>("uuid") {
+                for id_str in all_ids_str {
+                    let id = snip::search_uuid(&conn, id_str)?;
+                    uuids.push(id);
+                }
+            }
+
             // exclusionary terms
             if let Some(args) = sub_matches.get_many::<String>("exclude") {
                 terms_exclude = stem_vec(args.map(|x| x.to_owned()).collect());
@@ -629,6 +647,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 terms_exclude: terms_exclude.clone(),
                 terms_optional: vec![],
                 method: SearchMethod::IndexStem,
+                uuids,
             };
             let search_results = snip::search_structured(&conn, search_query)?;
             for item in search_results.items {
