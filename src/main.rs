@@ -59,6 +59,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .long("name")
                         .num_args(1)
                         .action(ArgAction::Set),
+                )
+                .arg(
+                    Arg::new("verbose")
+                        .help("verbose (pass output to stdout)")
+                        .short('v')
+                        .num_args(0)
+                        .action(ArgAction::SetTrue),
                 ),
         )
         .subcommand(
@@ -294,6 +301,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         snip::insert_snip(&conn, &s)?;
         s.index(&conn)?;
+        if sub_matches.get_flag("verbose") {
+            print!("{}", s.text);
+        }
         println!("added uuid: {}", s.uuid);
     }
 
