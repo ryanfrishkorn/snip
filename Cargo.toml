@@ -15,5 +15,6 @@ csv = "1.2.2"
 regex = "1.8.4"
 rusqlite = { version = "0.29.0", features = ["blob"] }
 rust-stemmers = "1.2.0"
+time = "0.3.2"
 unicode-segmentation = "1.10.1"
 uuid = { version = "1.4.0", features = ["v4", "fast-rng"]}
