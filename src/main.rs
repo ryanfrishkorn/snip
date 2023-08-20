@@ -271,8 +271,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .arg(
                     Arg::new("file")
                         .help("edited document file")
+                        .required(true)
                         .num_args(1)
                         .action(ArgAction::Append),
+                )
+                .arg(
+                    Arg::new("remove")
+                        .help("remove document file on successful update")
+                        .short('r')
+                        .num_args(0)
+                        .action(ArgAction::SetTrue),
                 ),
         );
 
@@ -786,6 +794,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             // collect attachments before printing so they are included in output
             s.collect_attachments(&conn)?;
             s.print();
+
+            // remove modified document file if requested
+            if sub_matches.get_flag("remove") {
+                match std::fs::remove_file(file) {
+                    Ok(_) => eprintln!("removed {}", file),
+                    Err(e) => eprintln!("error removing file {}: {}", file, e),
+                }
+            }
         } else {
             eprintln!("update failed");
             std::process::exit(1);
