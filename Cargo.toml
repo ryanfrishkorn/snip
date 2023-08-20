@@ -8,7 +8,6 @@ edition = "2021"
 test = false
 
 [dependencies]
-atty = "0.2.14"
 chrono = "0.4.26"
 clap = { version = "4.3.10", features = ["unstable-doc"] }
 colored = "2.0.4"

@@ -26,7 +26,7 @@ use rust_stemmers::{Algorithm, Stemmer};
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
-use std::io::Read;
+use std::io::{IsTerminal, Read};
 use std::path::Path;
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
@@ -398,7 +398,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             header.add("name", 0, ListHeadingAlignment::Left);
 
             // print listing
-            if atty::is(atty::Stream::Stdout) {
+            if std::io::stdout().is_terminal() {
                 eprintln!("{}", header.build().bright_black());
             }
             list_items(&conn, header, 0)?;
@@ -572,7 +572,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 limit = v.parse::<usize>()?;
             }
 
-            if atty::is(atty::Stream::Stdout) {
+            if std::io::stdout().is_terminal() {
                 eprintln!("{}", header.build().bright_black());
             }
             list_items(&conn, header, limit)?;
