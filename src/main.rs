@@ -263,6 +263,17 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .about("Stem word from stdin")
                 .arg_required_else_help(false)
                 .arg(Arg::new("words")),
+        )
+        .subcommand(
+            Command::new("update")
+                .about("Update document from modified file")
+                .arg_required_else_help(true)
+                .arg(
+                    Arg::new("file")
+                        .help("edited document file")
+                        .num_args(1)
+                        .action(ArgAction::Append),
+                ),
         );
 
     let matches = cmd.get_matches();
@@ -445,28 +456,35 @@ fn main() -> Result<(), Box<dyn Error>> {
                 true => print!("{}", s.text),
                 // formatted output
                 false => {
-                    println!(
-                        "uuid: {}\nname: {}\ntimestamp: {}\n----",
-                        s.uuid, s.name, s.timestamp
-                    );
-
-                    // add a newline if not already present
-                    match s.text.chars().last() {
-                        Some(v) if v == '\n' => println!("{}----", s.text),
-                        _ => println!("{}\n----", s.text),
-                    }
-
-                    // show attachments
                     s.collect_attachments(&conn)?;
-                    if !s.attachments.is_empty() {
-                        println!("attachments:");
+                    s.print();
+                } /*
+                  false => {
+                      println!(
+                          "uuid: {}\nname: {}\ntimestamp: {}\n----",
+                          s.uuid,
+                          s.name,
+                          s.timestamp.to_rfc3339()
+                      );
 
-                        println!("{:<36} {:>10} name", "uuid", "bytes");
-                        for a in &s.attachments {
-                            println!("{} {:>10} {}", a.uuid, a.size, a.name);
-                        }
-                    }
-                }
+                      // add a newline if not already present
+                      match s.text.chars().last() {
+                          Some(v) if v == '\n' => println!("{}----", s.text),
+                          _ => println!("{}\n----", s.text),
+                      }
+
+                      // show attachments
+                      s.collect_attachments(&conn)?;
+                      if !s.attachments.is_empty() {
+                          println!("attachments:");
+
+                          println!("{:<36} {:>10} name", "uuid", "bytes");
+                          for a in &s.attachments {
+                              println!("{} {:>10} {}", a.uuid, a.size, a.name);
+                          }
+                      }
+                  }
+                   */
             }
         }
 
@@ -753,6 +771,25 @@ fn main() -> Result<(), Box<dyn Error>> {
             stems.push(stemmer.stem(w.to_lowercase().as_str()).to_string());
         }
         println!("{:?}", stems);
+    }
+
+    // UPDATE
+    if let Some(("update", sub_matches)) = matches.subcommand() {
+        if let Some(file) = sub_matches.get_one::<String>("file") {
+            let s = snip::from_file(file)?;
+            s.update(&conn)?;
+            let mut s = snip::get_from_uuid(&conn, &s.uuid)?;
+            // re-index due to changed content
+            s.index(&conn)?;
+            eprintln!("update successful");
+
+            // collect attachments before printing so they are included in output
+            s.collect_attachments(&conn)?;
+            s.print();
+        } else {
+            eprintln!("update failed");
+            std::process::exit(1);
+        }
     }
 
     Ok(())

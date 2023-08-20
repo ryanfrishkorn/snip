@@ -141,6 +141,31 @@ impl Snip {
         Ok(())
     }
 
+    pub fn print(&self) {
+        println!(
+            "uuid: {}\nname: {}\ntimestamp: {}\n----",
+            self.uuid,
+            self.name,
+            self.timestamp.to_rfc3339()
+        );
+
+        // add a newline if not already present
+        match self.text.chars().last() {
+            Some(v) if v == '\n' => println!("{}----", self.text),
+            _ => println!("{}\n----", self.text),
+        }
+
+        // show attachments
+        if !self.attachments.is_empty() {
+            println!("attachments:");
+
+            println!("{:<36} {:>10} name", "uuid", "bytes");
+            for a in &self.attachments {
+                println!("{} {:>10} {}", a.uuid, a.size, a.name);
+            }
+        }
+    }
+
     /// scans and assigns all prefix and suffix strings to all analyzed words
     pub fn scan_fragments(&mut self) -> Result<(), SnipError> {
         // scan the document for tokens, in order collecting surrounding data for each token
@@ -253,12 +278,18 @@ impl Snip {
     /// Writes all fields to the database, overwriting existing data
     pub fn update(&self, conn: &Connection) -> Result<(), Box<dyn Error>> {
         let mut stmt = conn.prepare("UPDATE snip SET (data, timestamp, name) = (:data, :timestamp, :name) WHERE uuid = :uuid")?;
-        let _ = stmt.execute(&[
+        let rows_affected = stmt.execute(&[
             (":data", &self.text.to_string()),
             (":timestamp", &self.timestamp.to_rfc3339()),
             (":name", &self.name.to_string()),
             (":uuid", &self.uuid.to_string()),
         ])?;
+        if rows_affected != 1 {
+            return Err(Box::new(SnipError::General(format!(
+                "expected 1 row to be updated, got {}",
+                rows_affected
+            ))));
+        }
         Ok(())
     }
 
@@ -285,6 +316,11 @@ impl Snip {
         }
         Ok(())
     }
+}
+struct SnipHeader {
+    uuid: Uuid,
+    name: String,
+    timestamp: DateTime<FixedOffset>,
 }
 
 /// Clear the search index
@@ -343,6 +379,35 @@ pub fn find_by_graph(word: &str, text: Vec<&str>) -> Option<usize> {
         }
     }
     None
+}
+pub fn from_file(path: &str) -> Result<Snip, Box<dyn Error>> {
+    // read from file, parse header and body
+    let file_data = std::fs::read_to_string(path)?;
+
+    // read header
+    let header = parse_header(file_data.as_str())?;
+
+    // read document text
+    // find the end marker for the body text
+    // collect from line[4] to final line
+
+    // read from bottom of file through possible attachments until line == "----"
+    // let lines: Vec<&str> = file_data.split('\n').collect();
+    let text = parse_text(file_data.as_str())?;
+
+    // assign headers for now
+    // The attachment vector is inconsequential for editing purposes. The database should reflect
+    // the associations between documents and their attachments.
+    let s = Snip {
+        uuid: header.uuid,
+        name: header.name,
+        timestamp: header.timestamp,
+        analysis: SnipAnalysis { words: Vec::new() },
+        text,
+        attachments: Vec::new(),
+    };
+
+    Ok(s)
 }
 
 /// Generate document name from provided text
@@ -424,34 +489,106 @@ pub fn insert_snip(conn: &Connection, s: &Snip) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Return a vector of Uuid of all documents in the database
-pub fn uuid_list(conn: &Connection, limit: usize) -> Result<Vec<Uuid>, Box<dyn Error>> {
-    let mut ids: Vec<Uuid> = Vec::new();
+fn parse_text(data: &str) -> Result<String, Box<dyn Error>> {
+    let lines: Vec<&str> = data.split('\n').collect();
 
-    if limit != 0 {
-        let mut stmt =
-            conn.prepare("SELECT uuid FROM snip ORDER BY datetime(timestamp) DESC LIMIT :limit")?;
-        let query_iter = stmt.query_map(&[(":limit", &limit)], |row| {
-            let id_str: String = row.get(0)?;
-            Ok(id_str)
-        })?;
-
-        for id_str in query_iter.flatten() {
-            let id = Uuid::try_parse(id_str.as_str())?;
-            ids.push(id);
-        }
-    } else {
-        let mut stmt = conn.prepare("SELECT uuid FROM snip ORDER BY datetime(timestamp) DESC")?;
-        let mut rows = stmt.query([])?;
-
-        while let Some(row) = rows.next()? {
-            let id_str: String = row.get(0)?;
-            let id = Uuid::try_parse(id_str.as_str())?;
-            ids.push(id);
+    // find start
+    let mut text_start = 0;
+    for (i, line) in lines.iter().enumerate() {
+        if *line == "----" {
+            text_start = i + 1;
+            break;
         }
     }
 
-    Ok(ids)
+    let mut text_end = 0;
+    // locate text end from bottom (read in reverse)
+    for (i, line) in lines.iter().rev().enumerate() {
+        if *line == "----" {
+            text_end = lines.len() - (i + 1);
+            break;
+        }
+    }
+
+    let text = match lines.get(text_start..text_end) {
+        Some(v) => v.join("\n"),
+        None => {
+            return Err(Box::new(SnipError::General(
+                "parsing document text from file".to_string(),
+            )))
+        }
+    };
+
+    Ok(text)
+}
+
+/// Parses a document header from supplied data
+fn parse_header(data: &str) -> Result<SnipHeader, Box<dyn Error>> {
+    let default_error = Box::new(SnipError::General(format!("malformed header: {}", data)));
+    let lines = data.split('\n').collect::<Vec<&str>>();
+    let lines = match lines.get(0..4) {
+        Some(v) => v,
+        None => return Err(default_error),
+    };
+
+    let uuid_parsed = parse_field("uuid", lines[0])?;
+    let name_parsed = parse_field("name", lines[1])?;
+    let timestamp_parsed = parse_field("timestamp", lines[2])?;
+
+    let uuid = Uuid::try_parse(uuid_parsed.as_str())?;
+    let name = name_parsed.to_string();
+    let timestamp = DateTime::parse_from_rfc3339(timestamp_parsed.as_str())?;
+
+    let header = SnipHeader {
+        uuid,
+        name,
+        timestamp,
+    };
+
+    Ok(header)
+}
+
+/// Parses a field string value from a single line.
+fn parse_field(key_name: &str, line: &str) -> Result<String, Box<dyn Error>> {
+    let split_pos = match line.find(": ") {
+        Some(v) => v,
+        None => {
+            return Err(Box::new(SnipError::General(format!(
+                "could not find delimiting characters in line: {}",
+                line
+            ))));
+        }
+    };
+
+    // parse key and value
+    let key = match line.get(0..split_pos) {
+        Some(v) => v.trim(),
+        None => {
+            return Err(Box::new(SnipError::General(format!(
+                "malformed document header line: {}",
+                line
+            ))));
+        }
+    };
+    // verify that parsed key is the same as requested
+    if key != key_name {
+        return Err(Box::new(SnipError::General(format!(
+            "parsed key: {} does not match requested key: {}",
+            key, key_name,
+        ))));
+    }
+
+    let value = match line.get(split_pos + 2..) {
+        Some(v) => v.trim(),
+        None => {
+            return Err(Box::new(SnipError::General(format!(
+                "malformed document header line: {}",
+                line
+            ))));
+        }
+    };
+
+    Ok(value.to_string())
 }
 
 /// Read all data from standard input, line by line, and return it as a String.
@@ -532,6 +669,36 @@ pub fn strip_punctuation(s: &str) -> &str {
     clean
 }
 
+/// Return a vector of Uuid of all documents in the database
+pub fn uuid_list(conn: &Connection, limit: usize) -> Result<Vec<Uuid>, Box<dyn Error>> {
+    let mut ids: Vec<Uuid> = Vec::new();
+
+    if limit != 0 {
+        let mut stmt =
+            conn.prepare("SELECT uuid FROM snip ORDER BY datetime(timestamp) DESC LIMIT :limit")?;
+        let query_iter = stmt.query_map(&[(":limit", &limit)], |row| {
+            let id_str: String = row.get(0)?;
+            Ok(id_str)
+        })?;
+
+        for id_str in query_iter.flatten() {
+            let id = Uuid::try_parse(id_str.as_str())?;
+            ids.push(id);
+        }
+    } else {
+        let mut stmt = conn.prepare("SELECT uuid FROM snip ORDER BY datetime(timestamp) DESC")?;
+        let mut rows = stmt.query([])?;
+
+        while let Some(row) = rows.next()? {
+            let id_str: String = row.get(0)?;
+            let id = Uuid::try_parse(id_str.as_str())?;
+            ids.push(id);
+        }
+    }
+
+    Ok(ids)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -563,6 +730,13 @@ mod tests {
             panic!("expected '{}', got '{}'", expect, result);
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_from_file() -> Result<(), Box<dyn Error>> {
+        let s = from_file("test_data/document.txt")?;
+        println!("{} {} {}", s.uuid, s.name, s.timestamp);
         Ok(())
     }
 
@@ -649,6 +823,29 @@ mod tests {
             };
             assert_eq!(id, id_check);
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_field() -> Result<(), Box<dyn Error>> {
+        let data = format!("uuid: {}", ID_STR);
+        let result = parse_field("uuid", &data)?;
+        let expect = ID_STR;
+
+        assert_eq!(result, expect);
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_header() -> Result<(), Box<dyn Error>> {
+        let data = concat!(
+            "uuid: 80fb4982-3a12-4804-9226-e54ffda66431\n",
+            "name: uname output\n",
+            "timestamp: 2023-06-10T13:35:39.142965-07:00\n",
+            "----\n",
+        );
+        parse_header(data)?;
 
         Ok(())
     }
