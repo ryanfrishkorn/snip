@@ -713,7 +713,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             // this gathers an excerpt from the supplied position
                             let excerpt =
                                 s.analysis.get_excerpt(pos, context_words, context_raw)?;
-                            excerpt.print();
+                            excerpt.print(context_raw);
                         }
                     }
                 }
