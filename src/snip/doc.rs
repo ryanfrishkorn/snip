@@ -511,7 +511,12 @@ fn parse_text(data: &str) -> Result<String, Box<dyn Error>> {
     }
 
     let text = match lines.get(text_start..text_end) {
-        Some(v) => v.join("\n"),
+        Some(v) => {
+            let mut text_joined = v.join("\n");
+            // restore newline at end of text (lost due to split and join)
+            text_joined.push('\n');
+            text_joined
+        }
         None => {
             return Err(Box::new(SnipError::General(
                 "parsing document text from file".to_string(),
