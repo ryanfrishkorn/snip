@@ -659,7 +659,26 @@ fn main() -> Result<(), Box<dyn Error>> {
                 method: SearchMethod::IndexStem,
                 uuids,
             };
-            let search_results = snip::search_structured(&conn, search_query)?;
+            let search_results = match snip::search_structured(&conn, search_query) {
+                Ok(v) => v,
+                Err(e) => return Err(Box::new(e)),
+            };
+
+            // print to stderr to keep redirection clean
+            eprint!("{} document", search_results.items.len());
+            if search_results.items.len() != 1 {
+                eprint!("s");
+            }
+            eprintln!(" found");
+
+            // check to see if results are present
+            if search_results.items.is_empty() {
+                return Ok(());
+            }
+
+            // newline for clarity
+            eprintln!();
+
             for item in search_results.items {
                 let mut s = snip::get_from_uuid(&conn, &item.uuid)?;
                 s.analyze()?;

@@ -46,7 +46,7 @@ impl SearchQueryResult {
 pub fn search_structured(
     conn: &Connection,
     search_query: SearchQuery,
-) -> Result<SearchQueryResult, Box<dyn Error>> {
+) -> Result<SearchQueryResult, SnipError> {
     let mut query_result = SearchQueryResult { items: Vec::new() };
     let mut include_results: Vec<Uuid> = Vec::new();
     let mut exclude_results: Vec<Uuid> = Vec::new();
@@ -55,7 +55,10 @@ pub fn search_structured(
     if search_query.uuids.is_empty() {
         // INCLUDE
         for (i, term) in search_query.terms_include.iter().enumerate() {
-            let mut result = search_uuids_matching_term(conn, term)?;
+            let mut result = match search_uuids_matching_term(conn, term) {
+                Ok(v) => v,
+                Err(e) => return Err(e),
+            };
             // println!("iter result: {:?}", result);
             // push all results on first run for next iteration comparison
             if i == 0 {
@@ -158,13 +161,20 @@ fn get_term_positions(
     conn: &Connection,
     id: &Uuid,
     term: &String,
-) -> Result<Vec<usize>, Box<dyn Error>> {
-    let mut stmt =
-        conn.prepare("SELECT positions FROM snip_index_rs WHERE uuid = :uuid AND term = :term")?;
-    let query_iter = stmt.query_map(&[(":uuid", &id.to_string()), (":term", term)], |row| {
+) -> Result<Vec<usize>, SnipError> {
+    let mut stmt = match conn
+        .prepare("SELECT positions FROM snip_index_rs WHERE uuid = :uuid AND term = :term")
+    {
+        Ok(v) => v,
+        Err(e) => return Err(SnipError::General(format!("{}", e))),
+    };
+    let query_iter = match stmt.query_map(&[(":uuid", &id.to_string()), (":term", term)], |row| {
         let positions = row.get::<_, String>(0)?;
         Ok(positions)
-    })?;
+    }) {
+        Ok(v) => v,
+        Err(e) => return Err(SnipError::General(format!("{}", e))),
+    };
 
     let mut positions: Vec<usize> = Vec::new();
     if let Some(positions_str) = query_iter.flatten().next() {
@@ -180,19 +190,28 @@ fn get_term_positions(
 pub fn search_uuids_matching_term(
     conn: &Connection,
     term: &String,
-) -> Result<Vec<Uuid>, Box<dyn Error>> {
+) -> Result<Vec<Uuid>, SnipError> {
     let mut ids: Vec<Uuid> = Vec::new();
-    let mut stmt = conn.prepare("SELECT uuid FROM snip_index_rs WHERE term = :term")?;
-    let rows = stmt.query_and_then(
+    let mut stmt = match conn.prepare("SELECT uuid FROM snip_index_rs WHERE term = :term") {
+        Ok(v) => v,
+        Err(e) => return Err(SnipError::General(format!("{}", e))),
+    };
+    let rows = match stmt.query_and_then(
         &[(":term", &term)],
         |row| -> Result<String, Box<dyn Error>> {
             let id: String = row.get(0)?;
             Ok(id)
         },
-    )?;
+    ) {
+        Ok(v) => v,
+        Err(e) => return Err(SnipError::General(format!("{}", e))),
+    };
 
     for row in rows.flatten() {
-        let id = Uuid::try_parse(row.as_str())?;
+        let id = match Uuid::try_parse(row.as_str()) {
+            Ok(v) => v,
+            Err(e) => return Err(SnipError::General(format!("{}", e))),
+        };
         ids.push(id);
     }
     Ok(ids)
