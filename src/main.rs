@@ -454,7 +454,17 @@ fn main() -> Result<(), Box<dyn Error>> {
             .ok_or("uuid not present")?;
 
         // search for unique uuid to allow partial string arg
-        let id = snip::search_uuid(&conn, id_str)?;
+        let id = match snip::search_uuid(&conn, id_str) {
+            Ok(v) => v,
+            Err(e) => {
+                match &e {
+                    SnipError::UuidNotFound(s) => println!("{}", s),
+                    SnipError::UuidMultipleMatches(s) => println!("{}", s),
+                    _ => return Err(Box::new(e)),
+                }
+                return Ok(());
+            }
+        };
         let mut s = snip::get_from_uuid(&conn, &id)?;
 
         // check for raw or formatted output
@@ -466,33 +476,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 false => {
                     s.collect_attachments(&conn)?;
                     s.print();
-                } /*
-                  false => {
-                      println!(
-                          "uuid: {}\nname: {}\ntimestamp: {}\n----",
-                          s.uuid,
-                          s.name,
-                          s.timestamp.to_rfc3339()
-                      );
-
-                      // add a newline if not already present
-                      match s.text.chars().last() {
-                          Some(v) if v == '\n' => println!("{}----", s.text),
-                          _ => println!("{}\n----", s.text),
-                      }
-
-                      // show attachments
-                      s.collect_attachments(&conn)?;
-                      if !s.attachments.is_empty() {
-                          println!("attachments:");
-
-                          println!("{:<36} {:>10} name", "uuid", "bytes");
-                          for a in &s.attachments {
-                              println!("{} {:>10} {}", a.uuid, a.size, a.name);
-                          }
-                      }
-                  }
-                   */
+                }
             }
         }
 

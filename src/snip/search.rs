@@ -252,14 +252,26 @@ pub fn search_all_present(
 
 /// Search for a uuid matching the supplied partial string.
 /// The partial uuid must match a unique record to return the result.
-pub fn search_uuid(conn: &Connection, id_partial: &str) -> Result<Uuid, Box<dyn Error>> {
-    let mut stmt = conn.prepare("SELECT uuid from snip WHERE uuid LIKE :id LIMIT 2")?;
+pub fn search_uuid(conn: &Connection, id_partial: &str) -> Result<Uuid, SnipError> {
+    let mut stmt = match conn.prepare("SELECT uuid from snip WHERE uuid LIKE :id LIMIT 2") {
+        Ok(v) => v,
+        Err(e) => {
+            println!("There was a problem preparing the search query: {}", e);
+            return Err(SnipError::General(format!("{}", e)));
+        }
+    };
     let id_partial_fuzzy = format!("{}{}{}", "%", id_partial, "%");
 
-    let rows = stmt.query_map(&[(":id", &id_partial_fuzzy)], |row| {
-        let id_str = row.get(0)?;
+    let rows = match stmt.query_map(&[(":id", &id_partial_fuzzy)], |row| {
+        let id_str = match row.get(0) {
+            Ok(v) => v,
+            Err(e) => return Err(e),
+        };
         Ok(id_str)
-    })?;
+    }) {
+        Ok(v) => v,
+        Err(e) => return Err(SnipError::General(format!("{}", e))),
+    };
 
     // return only if a singular result is matched, so we check for two results
     let mut id_str = String::new();
@@ -267,23 +279,23 @@ pub fn search_uuid(conn: &Connection, id_partial: &str) -> Result<Uuid, Box<dyn 
         if i == 0 {
             id_str = id.unwrap();
         } else {
-            return Err(Box::new(SnipError::UuidMultipleMatches(format!(
+            return Err(SnipError::UuidMultipleMatches(format!(
                 "provided partial {} returned multiple document uuids",
                 id_partial
-            ))));
+            )));
         }
     }
 
     if !id_str.is_empty() {
         return match Uuid::parse_str(&id_str) {
             Ok(v) => Ok(v),
-            Err(e) => Err(Box::new(e)),
+            Err(e) => Err(SnipError::General(format!("{}", e))),
         };
     }
-    Err(Box::new(SnipError::UuidNotFound(format!(
-        "document uuid not found using partial {}",
+    Err(SnipError::UuidNotFound(format!(
+        "The document id was not found using id {}",
         id_partial
-    ))))
+    )))
 }
 
 #[cfg(test)]
