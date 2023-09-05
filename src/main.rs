@@ -153,6 +153,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                 ),
         )
         .subcommand(
+            Command::new("import").arg_required_else_help(true).arg(
+                Arg::new("files")
+                    .help("import document files")
+                    .required(true)
+                    .action(ArgAction::Append),
+            ),
+        )
+        .subcommand(
             Command::new("index")
                 .about("Reindex the database")
                 .arg_required_else_help(false),
@@ -327,7 +335,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             attachments: Vec::new(),
         };
 
-        snip::insert_snip(&conn, &s)?;
+        s.insert(&conn)?;
         s.index(&conn)?;
         if sub_matches.get_flag("verbose") {
             print!("{}", s.text);
@@ -488,6 +496,34 @@ fn main() -> Result<(), Box<dyn Error>> {
                     Err(e) => return Err(Box::new(e)),
                 }
                 println!("{:#?}\n", s.analysis);
+            }
+        }
+    }
+
+    // IMPORT
+    if let Some(("import", sub_matches)) = matches.subcommand() {
+        if let Some(files) = sub_matches.get_many::<String>("files") {
+            let mut errors = false;
+            // Note: attachments are ignored and not imported
+            for file in files.into_iter() {
+                print!("importing {:?}...", file);
+
+                let mut s = snip::from_file(file)?;
+                if snip::get_from_uuid(&conn, &s.uuid).is_ok() {
+                    println!("refusing duplicate insert {}", s.uuid);
+                    errors = true;
+                    // proceed but notify of errors after iterations
+                    continue;
+                }
+
+                // check for existing id to avoid duplicates
+                s.insert(&conn)?;
+                // always index after import
+                s.index(&conn)?;
+                println!("success");
+            }
+            if errors {
+                eprintln!("WARNING: Some documents were not imported.");
             }
         }
     }

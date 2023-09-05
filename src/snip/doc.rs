@@ -141,6 +141,20 @@ impl Snip {
         Ok(())
     }
 
+    /// Inserts a new document to the database
+    pub fn insert(&self, conn: &Connection) -> Result<(), Box<dyn Error>> {
+        let mut stmt =
+            conn.prepare("INSERT INTO snip(uuid, timestamp, name, data) VALUES (?1, ?2, ?3, ?4)")?;
+        stmt.execute([
+            self.uuid.to_string(),
+            self.timestamp.to_rfc3339(),
+            self.name.clone(),
+            self.text.clone(),
+        ])?;
+
+        Ok(())
+    }
+
     pub fn print(&self) {
         println!(
             "uuid: {}\nname: {}\ntimestamp: {}\n----",
@@ -475,20 +489,6 @@ pub fn index_all_items(conn: &Connection) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Adds a new document to the database
-pub fn insert_snip(conn: &Connection, s: &Snip) -> Result<(), Box<dyn Error>> {
-    let mut stmt =
-        conn.prepare("INSERT INTO snip(uuid, timestamp, name, data) VALUES (?1, ?2, ?3, ?4)")?;
-    stmt.execute([
-        s.uuid.to_string(),
-        s.timestamp.to_rfc3339(),
-        s.name.clone(),
-        s.text.clone(),
-    ])?;
-
-    Ok(())
-}
-
 fn parse_text(data: &str) -> Result<String, Box<dyn Error>> {
     let lines: Vec<&str> = data.split('\n').collect();
 
@@ -803,7 +803,7 @@ mod tests {
     }
 
     #[test]
-    fn test_insert_snip() -> Result<(), Box<dyn Error>> {
+    fn test_insert_new() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database().expect("preparing in-memory database");
         let id = Uuid::new_v4();
 
@@ -815,7 +815,7 @@ mod tests {
             analysis: SnipAnalysis { words: Vec::new() },
             attachments: Vec::new(),
         };
-        insert_snip(&conn, &s)?;
+        s.insert(&conn)?;
 
         // verify
         let mut stmt = conn.prepare("SELECT uuid FROM snip WHERE uuid = ?")?;
@@ -875,6 +875,29 @@ mod tests {
                 "document is still present after attempted deletion".to_string(),
             )));
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_insert() -> Result<(), Box<dyn Error>> {
+        let conn = prepare_database()?;
+        let id = Uuid::try_parse(ID_STR)?;
+
+        let s = snip::get_from_uuid(&conn, &id)?;
+        // first remove from database
+        remove_snip(&conn, id)?;
+
+        // verify removal
+        if snip::get_from_uuid(&conn, &id).is_ok() {
+            panic!("expected missing document, got document with id {}", id);
+        }
+
+        // insert and verify presence
+        s.insert(&conn)?;
+        if snip::get_from_uuid(&conn, &id).is_err() {
+            panic!("expected document, got Err searching for id {}", id);
+        }
+
         Ok(())
     }
 
