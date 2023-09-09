@@ -701,11 +701,20 @@ fn main() -> Result<(), Box<dyn Error>> {
             };
 
             // print to stderr to keep redirection clean
-            eprint!("{} document", search_results.items.len());
+            eprint!("document");
             if search_results.items.len() != 1 {
                 eprint!("s");
             }
-            eprintln!(" found");
+            eprint!(": {}", search_results.items.len());
+            // print count of matched terms
+            let mut term_match_count = 0;
+            for item in &search_results.items {
+                for m in &item.matches {
+                    term_match_count += m.1.len();
+                }
+            }
+            eprint!(" occurrences: {}", term_match_count);
+            eprintln!();
 
             // check to see if results are present
             if search_results.items.is_empty() {
