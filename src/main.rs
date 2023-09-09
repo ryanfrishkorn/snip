@@ -223,6 +223,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .action(ArgAction::Append),
                 )
                 .arg(
+                    Arg::new("count")
+                        .help("print match count only (no excerpts)")
+                        .short('c')
+                        .num_args(0)
+                        .required(false)
+                        .action(ArgAction::SetTrue),
+                )
+                .arg(
                     Arg::new("context")
                         .help("number of surrounding context words displayed")
                         .short('C')
@@ -716,7 +724,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             eprint!(" occurrences: {}", term_match_count);
             eprintln!();
 
-            // check to see if results are present
+            // exit if only counts are requested
+            if sub_matches.get_flag("count") {
+                return Ok(());
+            }
+
+            // exit if no results are present
             if search_results.items.is_empty() {
                 return Ok(());
             }
