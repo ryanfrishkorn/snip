@@ -708,22 +708,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Err(e) => return Err(Box::new(e)),
             };
 
-            // print to stderr to keep redirection clean
-            eprint!("document");
-            if search_results.items.len() != 1 {
-                eprint!("s");
-            }
-            eprint!(": {}", search_results.items.len());
-            // print count of matched terms
-            let mut term_match_count = 0;
-            for item in &search_results.items {
-                for m in &item.matches {
-                    term_match_count += m.1.len();
-                }
-            }
-            eprint!(" occurrences: {}", term_match_count);
-            eprintln!();
-
             // exit if only counts are requested
             if sub_matches.get_flag("count") {
                 return Ok(());
@@ -734,10 +718,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 return Ok(());
             }
 
-            // newline for clarity
-            eprintln!();
-
-            for item in search_results.items {
+            for item in &search_results.items {
                 let mut s = snip::get_from_uuid(&conn, &item.uuid)?;
                 s.analyze()?;
                 println!("{}", s.name.white());
@@ -780,6 +761,21 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
                 println!();
             }
+
+            // print to stderr to keep redirection clean
+            eprint!("document");
+            if search_results.items.len() != 1 {
+                eprint!("s");
+            }
+            eprint!(": {}", search_results.items.len());
+            // print count of matched terms
+            let mut term_match_count = 0;
+            for item in &search_results.items {
+                for m in &item.matches {
+                    term_match_count += m.1.len();
+                }
+            }
+            eprintln!(" occurrences: {}", term_match_count);
 
             /*
             // single term direct data search

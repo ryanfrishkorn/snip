@@ -883,18 +883,18 @@ mod tests {
         let conn = prepare_database()?;
         let id = Uuid::try_parse(ID_STR)?;
 
-        let s = snip::get_from_uuid(&conn, &id)?;
+        let s = get_from_uuid(&conn, &id)?;
         // first remove from database
         remove_snip(&conn, id)?;
 
         // verify removal
-        if snip::get_from_uuid(&conn, &id).is_ok() {
+        if get_from_uuid(&conn, &id).is_ok() {
             panic!("expected missing document, got document with id {}", id);
         }
 
         // insert and verify presence
         s.insert(&conn)?;
-        if snip::get_from_uuid(&conn, &id).is_err() {
+        if get_from_uuid(&conn, &id).is_err() {
             panic!("expected document, got Err searching for id {}", id);
         }
 
