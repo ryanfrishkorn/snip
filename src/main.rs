@@ -91,11 +91,26 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .about("list attachments")
                         .arg_required_else_help(false)
                         .arg(
+                            Arg::new("doc")
+                                .help("display associated document uuid")
+                                .short('d')
+                                .long("doc")
+                                .num_args(0)
+                                .action(ArgAction::SetTrue),
+                        )
+                        .arg(
                             Arg::new("long")
                                 .help("display full uuid")
                                 .short('l')
                                 .num_args(0)
                                 .action(ArgAction::SetTrue),
+                        )
+                        .arg(
+                            Arg::new("number")
+                                .help("number of documents to list")
+                                .short('n')
+                                .num_args(1)
+                                .action(ArgAction::Append),
                         )
                         .arg(
                             Arg::new("size")
@@ -409,6 +424,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                 header.add("uuid", 8, ListHeadingAlignment::Left);
             }
 
+            // associated document uuid
+            if attach_sub_matches.get_flag("doc") {
+                header.add("document", 8, ListHeadingAlignment::Left)
+            }
+
             // time
             if attach_sub_matches.get_flag("time") {
                 header.add("time", 33, ListHeadingAlignment::Left);
@@ -422,11 +442,16 @@ fn main() -> Result<(), Box<dyn Error>> {
             // name (mandatory)
             header.add("name", 0, ListHeadingAlignment::Left);
 
+            let mut limit: Option<usize> = None;
+            if let Some(v) = attach_sub_matches.get_one::<String>("number") {
+                limit = Some(v.parse::<usize>()?);
+            }
+
             // print listing
             if std::io::stdout().is_terminal() {
                 eprintln!("{}", header.build().bright_black());
             }
-            list_items(&conn, header, None)?;
+            list_attachments(&conn, header, limit)?;
         }
 
         // ATTACH RM
@@ -955,10 +980,7 @@ fn list_items(
     heading: ListHeading,
     limit: Option<usize>,
 ) -> Result<(), Box<dyn Error>> {
-    let ids = match heading.kind {
-        ListHeadingKind::Document => snip::uuid_list(conn, limit)?,
-        ListHeadingKind::Attachment => snip::get_attachment_all(conn)?,
-    };
+    let ids = snip::uuid_list(conn, limit)?;
 
     for id in ids {
         // establish required data
@@ -990,6 +1012,58 @@ fn list_items(
         for col in &heading.columns {
             let str = match col.name.as_str() {
                 "uuid" => uuid.to_string().bright_blue(),
+                "time" => time.bright_black(),
+                "size" => size.white(),
+                "name" => name.clone().white(),
+                _ => {
+                    return Err(Box::new(SnipError::General(
+                        "invalid column name supplied".to_string(),
+                    )))
+                }
+            };
+            // eprintln!("prefix: {} suffix: {}", col.prefix, col.suffix);
+            match col.name.as_str() {
+                "uuid" => match col.width {
+                    v if v <= 8 => print!("{} ", snip::split_uuid(&uuid)[0].bright_blue()),
+                    _ => print!("{} ", uuid.to_string().bright_blue()),
+                },
+                "size" => print!("{:>9} ", str),
+                _ => print!("{} ", str),
+            }
+        }
+        println!();
+    }
+
+    Ok(())
+}
+
+fn list_attachments(
+    conn: &Connection,
+    heading: ListHeading,
+    limit: Option<usize>,
+) -> Result<(), Box<dyn Error>> {
+    let ids = snip::get_attachment_all(conn)?;
+
+    for (i, id) in ids.into_iter().enumerate() {
+        if let Some(v) = limit {
+            if i == v {
+                break;
+            }
+        }
+
+        let attachment = snip::get_attachment_from_uuid(conn, id)?;
+        let uuid = attachment.uuid;
+        let uuid_document = attachment.snip_uuid;
+        let time = attachment.timestamp.to_string();
+        let size = attachment.size.to_string();
+        let name = attachment.name.clone();
+
+        for col in &heading.columns {
+            let str = match col.name.as_str() {
+                "uuid" => uuid.to_string().bright_blue(),
+                "document" => snip::split_uuid(&uuid_document)[0]
+                    .to_string()
+                    .bright_blue(),
                 "time" => time.bright_black(),
                 "size" => size.white(),
                 "name" => name.clone().white(),
