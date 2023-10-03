@@ -11,6 +11,7 @@ pub struct SearchQuery {
     pub terms_optional: Vec<String>, // neither mandatory nor disqualifying, but increase score if present
     pub method: SearchMethod,        // search the index, document text field, etc.
     pub uuids: Vec<Uuid>,
+    pub limit: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -97,7 +98,12 @@ pub fn search_structured(
     }
 
     // BUILD OUTPUT
-    for uuid in include_results {
+    for (i, uuid) in include_results.into_iter().enumerate() {
+        if let Some(limit) = search_query.limit {
+            if i == limit {
+                break;
+            }
+        }
         let mut item = SearchQueryItem {
             uuid,
             score: None,
@@ -365,6 +371,7 @@ mod tests {
             terms_optional: vec![],
             method: SearchMethod::IndexStem,
             uuids: vec![],
+            limit: None,
         };
 
         let expect = SearchQueryResult {
@@ -424,6 +431,7 @@ mod tests {
             terms_optional: vec![],
             method: SearchMethod::IndexStem,
             uuids: vec![id],
+            limit: None,
         };
         let result = search_structured(&conn, query)?;
         // println!("result: {:#?}", result);
@@ -455,6 +463,7 @@ mod tests {
             terms_optional: vec![],
             method: SearchMethod::IndexStem,
             uuids: vec![id],
+            limit: None,
         };
         let result = search_structured(&conn, query)?;
         // println!("result: {:#?}", result);

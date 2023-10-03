@@ -216,16 +216,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .action(ArgAction::Append),
                 )
                 .arg(
-                    Arg::new("match-limit")
-                        .help("limit the number of match excerpts displayed")
-                        .long("match-limit")
-                        .num_args(1)
-                        .action(ArgAction::Append),
-                )
-                .arg(
                     Arg::new("count")
                         .help("print match count only (no excerpts)")
                         .short('c')
+                        .long("count")
                         .num_args(0)
                         .required(false)
                         .action(ArgAction::SetTrue),
@@ -237,6 +231,21 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .long("context")
                         .num_args(1)
                         .required(false)
+                        .action(ArgAction::Append),
+                )
+                .arg(
+                    Arg::new("excerpt-limit")
+                        .help("limit the number of match excerpts displayed")
+                        .long("excerpts")
+                        .num_args(1)
+                        .action(ArgAction::Append),
+                )
+                .arg(
+                    Arg::new("limit")
+                        .help("max number of documents to match")
+                        .short('l')
+                        .long("limit")
+                        .num_args(1)
                         .action(ArgAction::Append),
                 )
                 .arg(
@@ -417,7 +426,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             if std::io::stdout().is_terminal() {
                 eprintln!("{}", header.build().bright_black());
             }
-            list_items(&conn, header, 0)?;
+            list_items(&conn, header, None)?;
         }
 
         // ATTACH RM
@@ -543,7 +552,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         // clear all data to ensure consistency
         snip::clear_index(&conn)?;
 
-        let ids = snip::uuid_list(&conn, 0)?;
+        let ids = snip::uuid_list(&conn, None)?;
         let mut status_len: usize;
         eprint!("indexing...");
         for (i, id) in ids.iter().enumerate() {
@@ -595,9 +604,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             header.add("name", 0, ListHeadingAlignment::Left);
 
             // check for limit
-            let mut limit: usize = 0;
+            let mut limit: Option<usize> = None;
             if let Some(v) = arg_matches.get_one::<String>("number") {
-                limit = v.parse::<usize>()?;
+                limit = Some(v.parse::<usize>()?);
             }
 
             if std::io::stdout().is_terminal() {
@@ -678,10 +687,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                 terms_exclude = stem_vec(args.map(|x| x.to_owned()).collect());
             }
 
-            // establish match limit
-            let mut excerpt_limit = 0;
-            if let Some(limit) = sub_matches.get_one::<String>("match-limit") {
-                excerpt_limit = limit.parse::<usize>()?;
+            // establish document limit
+            let mut limit: Option<usize> = None;
+            if let Some(document_limit) = sub_matches.get_one::<String>("limit") {
+                limit = Some(document_limit.parse::<usize>()?);
+            }
+
+            // all excerpts are printed by default, unless a maximum per document is set
+            let mut excerpts: Option<usize> = None;
+            if let Some(limit) = sub_matches.get_one::<String>("excerpt-limit") {
+                excerpts = Some(limit.parse::<usize>()?);
             }
 
             // establish number of surrounding context words to display
@@ -702,64 +717,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                 terms_optional: vec![],
                 method: SearchMethod::IndexStem,
                 uuids,
+                limit,
             };
             let search_results = match snip::search_structured(&conn, search_query) {
                 Ok(v) => v,
                 Err(e) => return Err(Box::new(e)),
             };
 
-            // exit if only counts are requested
-            if sub_matches.get_flag("count") {
-                return Ok(());
-            }
-
             // exit if no results are present
             if search_results.items.is_empty() {
                 return Ok(());
-            }
-
-            for item in &search_results.items {
-                let mut s = snip::get_from_uuid(&conn, &item.uuid)?;
-                s.analyze()?;
-                println!("{}", s.name.white());
-                print!("  {}", snip::split_uuid(&s.uuid)[0].bright_blue());
-
-                // create and print a summary of terms and counts
-                let mut terms_summary: HashMap<String, usize> = HashMap::new();
-                for (term, positions) in &item.matches {
-                    terms_summary.insert(term.clone(), positions.len());
-                }
-                print!(" [");
-                // use argument terms vector to order by term
-                for (i, term) in terms_include.iter().enumerate() {
-                    if let Some(count) = terms_summary.get(term.as_str()) {
-                        print!("{}: {}", term, count);
-                        if i != terms_summary.len() - 1 {
-                            print!(" ");
-                        }
-                    }
-                }
-                print!("]");
-                println!();
-
-                // for each position, gather context and display
-                for term in &terms_include {
-                    if let Some(positions) = item.matches.get(term.as_str()) {
-                        for (i, pos) in positions.iter().enumerate() {
-                            // if limit is hit, show the additional match count
-                            if i != 0 && i == excerpt_limit {
-                                println!("    ...additional matches: {}", positions.len() - i);
-                                break;
-                            }
-
-                            // this gathers an excerpt from the supplied position
-                            let excerpt =
-                                s.analysis.get_excerpt(pos, context_words, context_raw)?;
-                            excerpt.print(context_raw);
-                        }
-                    }
-                }
-                println!();
             }
 
             // print to stderr to keep redirection clean
@@ -776,6 +743,54 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
             eprintln!(" occurrences: {}", term_match_count);
+
+            // we don't need excerpts for count only
+            if !sub_matches.get_flag("count") {
+                for item in &search_results.items {
+                    let mut s = snip::get_from_uuid(&conn, &item.uuid)?;
+                    s.analyze()?;
+                    println!("{}", s.name.white());
+                    print!("  {}", snip::split_uuid(&s.uuid)[0].bright_blue());
+
+                    // create and print a summary of terms and counts
+                    let mut terms_summary: HashMap<String, usize> = HashMap::new();
+                    for (term, positions) in &item.matches {
+                        terms_summary.insert(term.clone(), positions.len());
+                    }
+                    print!(" [");
+                    // use argument terms vector to order by term
+                    for (i, term) in terms_include.iter().enumerate() {
+                        if let Some(count) = terms_summary.get(term.as_str()) {
+                            print!("{}: {}", term, count);
+                            if i != terms_summary.len() - 1 {
+                                print!(" ");
+                            }
+                        }
+                    }
+                    print!("]");
+                    println!();
+
+                    // for each position, gather context and display
+                    for term in &terms_include {
+                        if let Some(positions) = item.matches.get(term.as_str()) {
+                            for (i, pos) in positions.iter().enumerate() {
+                                // if limit is hit, break immediately
+                                if let Some(e_limit) = excerpts {
+                                    if i == e_limit {
+                                        break;
+                                    }
+                                }
+
+                                // this gathers an excerpt from the supplied position
+                                let excerpt =
+                                    s.analysis.get_excerpt(pos, context_words, context_raw)?;
+                                excerpt.print(context_raw);
+                            }
+                        }
+                    }
+                    println!();
+                }
+            }
 
             /*
             // single term direct data search
@@ -935,7 +950,11 @@ impl ListHeading {
     }
 }
 
-fn list_items(conn: &Connection, heading: ListHeading, limit: usize) -> Result<(), Box<dyn Error>> {
+fn list_items(
+    conn: &Connection,
+    heading: ListHeading,
+    limit: Option<usize>,
+) -> Result<(), Box<dyn Error>> {
     let ids = match heading.kind {
         ListHeadingKind::Document => snip::uuid_list(conn, limit)?,
         ListHeadingKind::Attachment => snip::get_attachment_all(conn)?,

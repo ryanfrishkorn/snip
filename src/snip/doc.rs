@@ -675,10 +675,10 @@ pub fn strip_punctuation(s: &str) -> &str {
 }
 
 /// Return a vector of Uuid of all documents in the database
-pub fn uuid_list(conn: &Connection, limit: usize) -> Result<Vec<Uuid>, Box<dyn Error>> {
+pub fn uuid_list(conn: &Connection, limit: Option<usize>) -> Result<Vec<Uuid>, Box<dyn Error>> {
     let mut ids: Vec<Uuid> = Vec::new();
 
-    if limit != 0 {
+    if limit.is_some() {
         let mut stmt =
             conn.prepare("SELECT uuid FROM snip ORDER BY datetime(timestamp) DESC LIMIT :limit")?;
         let query_iter = stmt.query_map(&[(":limit", &limit)], |row| {
