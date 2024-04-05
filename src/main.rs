@@ -110,6 +110,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 .help("number of documents to list")
                                 .short('n')
                                 .num_args(1)
+                                .default_value("20")
                                 .action(ArgAction::Append),
                         )
                         .arg(
@@ -184,6 +185,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             Command::new("ls")
                 .about("List snips")
                 .arg(
+                    Arg::new("all")
+                        .help("all documents")
+                        .short('a')
+                        .num_args(0)
+                        .action(ArgAction::SetTrue),
+                )
+                .arg(
                     Arg::new("long")
                         .help("display full uuid")
                         .short('l')
@@ -195,6 +203,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .help("number of documents to list")
                         .short('n')
                         .num_args(1)
+                        .default_value("20")
                         .action(ArgAction::Append),
                 )
                 .arg(
@@ -632,6 +641,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             let mut limit: Option<usize> = None;
             if let Some(v) = arg_matches.get_one::<String>("number") {
                 limit = Some(v.parse::<usize>()?);
+            }
+
+            // check for all flag
+            if arg_matches.get_flag("all") {
+                limit = None;
             }
 
             if std::io::stdout().is_terminal() {
