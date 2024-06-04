@@ -188,6 +188,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     Arg::new("all")
                         .help("all documents")
                         .short('a')
+                        .long("all")
                         .num_args(0)
                         .action(ArgAction::SetTrue),
                 )
