@@ -626,9 +626,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
 
             // time
-            if arg_matches.get_flag("time") {
-                header.add("time", 33, ListHeadingAlignment::Left);
-            }
+            header.add("time", 33, ListHeadingAlignment::Left);
 
             // size
             if arg_matches.get_flag("size") {
