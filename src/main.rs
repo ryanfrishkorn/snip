@@ -40,6 +40,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .long("read-only")
                 .action(ArgAction::SetTrue),
         )
+        .arg(
+            Arg::new("d")
+                .short('d')
+                .action(ArgAction::Set)
+                .help("SQLite database file")
+                .value_name("FILE"),
+        )
         .subcommand_required(true)
         .subcommand(
             Command::new("add")
@@ -340,7 +347,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         Ok(v) => v,
         Err(e) => panic!("Could not obtain HOME env: {}", e),
     };
-    let db_path = env::var("SNIP_DB").unwrap_or(format!("{}/{}", home_dir, db_file_default));
+    let db_path: String = match matches.get_one::<String>("d") {
+        Some(v) => v.to_owned(),
+        None => env::var("SNIP_DB").unwrap_or(format!("{}/{}", home_dir, db_file_default)),
+    };
 
     let conn = match matches.get_flag("read-only") {
         true => Connection::open_with_flags(db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?,
