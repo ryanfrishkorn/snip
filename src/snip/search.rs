@@ -56,10 +56,7 @@ pub fn search_structured(
     if search_query.uuids.is_empty() {
         // INCLUDE
         for (i, term) in search_query.terms_include.iter().enumerate() {
-            let mut result = match search_uuids_matching_term(conn, term) {
-                Ok(v) => v,
-                Err(e) => return Err(e),
-            };
+            let mut result = search_uuids_matching_term(conn, term)?;
             // println!("iter result: {:?}", result);
             // push all results on first run for next iteration comparison
             if i == 0 {
@@ -267,9 +264,7 @@ pub fn search_all_present(
         item.matches.insert(rt.term, rt.positions);
 
         // add to final results
-        if result.items.get(&rt.uuid).is_none() {
-            result.items.insert(rt.uuid, Vec::new());
-        }
+        result.items.entry(rt.uuid).or_default();
         result.items.get_mut(&rt.uuid).unwrap().push(item); // FIXME - no unwrap
     }
     Ok(result)
@@ -435,7 +430,7 @@ mod tests {
         };
         let result = search_structured(&conn, query)?;
         // println!("result: {:#?}", result);
-        let item = result.items.get(0).unwrap();
+        let item = result.items.first().unwrap();
         // check length of positions for "lorem"
         let item_lorem_len = item.matches.get("lorem").unwrap().len();
         let item_lorem_len_expect = 2;
@@ -468,7 +463,7 @@ mod tests {
         let result = search_structured(&conn, query)?;
         // println!("result: {:#?}", result);
         // check length of positions for "fuzz"
-        let item = result.items.get(0).unwrap();
+        let item = result.items.first().unwrap();
         let item_fuzz_len = item.matches.get("fuzz").unwrap().len();
         let item_fuzz_len_expect = 7;
         if item_fuzz_len != item_fuzz_len_expect {

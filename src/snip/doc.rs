@@ -118,9 +118,7 @@ impl Snip {
         // collect the positions of each term in the document
         let mut terms_positions: HashMap<String, Vec<u64>> = HashMap::new();
         for (pos, word) in self.analysis.words.iter().enumerate() {
-            let positions = terms_positions
-                .entry(word.stem.clone())
-                .or_insert(Vec::new());
+            let positions = terms_positions.entry(word.stem.clone()).or_default();
             positions.push(pos as u64);
         }
         // println!("{:#?}", terms_positions);
@@ -165,7 +163,7 @@ impl Snip {
 
         // add a newline if not already present
         match self.text.chars().last() {
-            Some(v) if v == '\n' => println!("{}----", self.text),
+            Some('\n') => println!("{}----", self.text),
             _ => println!("{}\n----", self.text),
         }
 
@@ -425,7 +423,7 @@ pub fn from_file(path: &str) -> Result<Snip, Box<dyn Error>> {
 }
 
 /// Generate document name from provided text
-pub fn generate_name(text: &String, count: usize) -> Result<String, Box<dyn Error>> {
+pub fn generate_name(text: &str, count: usize) -> Result<String, Box<dyn Error>> {
     let mut name = String::new();
 
     let words: Vec<&str> = text.unicode_words().collect();
@@ -619,7 +617,7 @@ pub fn remove_snip(conn: &Connection, id: Uuid) -> Result<(), Box<dyn Error>> {
     let mut stmt = conn.prepare("DELETE FROM snip WHERE uuid = ?1")?;
     let n = stmt.execute([id.to_string()]);
     match n {
-        Ok(n) if n == 1 => Ok(()),
+        Ok(1) => Ok(()),
         _ => Err(Box::new(SnipError::General(
             "delete did not return a singular result".to_string(),
         ))),

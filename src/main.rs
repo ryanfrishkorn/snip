@@ -1017,7 +1017,7 @@ fn list_items(
                 let document = snip::get_from_uuid(conn, &id)?;
 
                 uuid = document.uuid;
-                time = document.timestamp.to_string();
+                time = document.timestamp.to_utc().to_string();
                 size = document.text.len().to_string();
                 name = document.name.clone();
             }

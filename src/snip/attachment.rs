@@ -146,10 +146,7 @@ pub fn get_attachment_from_uuid(conn: &Connection, id: Uuid) -> Result<Attachmen
     })?;
 
     if let Some(a) = rows.next() {
-        let attachment = match a {
-            Ok(v) => v,
-            Err(e) => return Err(e),
-        };
+        let attachment = a?;
         return Ok(attachment);
     }
 
