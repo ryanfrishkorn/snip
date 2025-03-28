@@ -1,9 +1,9 @@
-mod analysis;
-mod attachment;
-mod doc;
-mod error;
-mod search;
-mod test_prep;
+pub mod analysis;
+pub mod attachment;
+pub mod doc;
+pub mod error;
+pub mod search;
+pub mod test_prep;
 
 pub use analysis::*;
 pub use attachment::*;
