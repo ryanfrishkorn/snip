@@ -1,4 +1,4 @@
-use crate::snip;
+use crate::doc::create_snip_tables;
 use rusqlite::{Connection, DatabaseName};
 use std::collections::HashMap;
 use std::error::Error;
@@ -13,7 +13,7 @@ pub const ID_ATTACH_STR: &str = "9cfc5a2d-2946-48ee-82e0-227ba4bcdbd5";
 pub fn prepare_database() -> Result<Connection, Box<dyn Error>> {
     let conn = Connection::open_in_memory()?;
     // import data
-    snip::create_snip_tables(&conn).expect("creating database tables");
+    create_snip_tables(&conn).expect("creating database tables");
     import_snip_data(&conn).expect("importing test data");
 
     Ok(conn)

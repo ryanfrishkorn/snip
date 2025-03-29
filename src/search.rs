@@ -1,4 +1,4 @@
-use crate::snip::SnipError;
+use crate::error::SnipError;
 use rusqlite::Connection;
 use std::collections::HashMap;
 use std::error::Error;
@@ -321,8 +321,8 @@ pub fn search_uuid(conn: &Connection, id_partial: &str) -> Result<Uuid, SnipErro
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::snip;
-    use crate::snip::test_prep::*;
+    use crate::doc::index_all_items;
+    use crate::test_prep::*;
     use std::collections::HashMap;
     use std::error::Error;
     use uuid::Uuid;
@@ -330,7 +330,7 @@ mod tests {
     #[test]
     fn test_search_all_present() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database().expect("preparing in-memory database");
-        snip::index_all_items(&conn)?;
+        index_all_items(&conn)?;
 
         let stemmer = rust_stemmers::Stemmer::create(rust_stemmers::Algorithm::English);
 
@@ -357,7 +357,7 @@ mod tests {
     #[test]
     fn test_search_structured() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database()?;
-        snip::index_all_items(&conn)?;
+        index_all_items(&conn)?;
 
         let query = SearchQuery {
             // terms_include: vec!["ipsum".to_string(), "dolor".to_string()],
@@ -416,7 +416,7 @@ mod tests {
     #[test]
     fn test_search_structured_uuids() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database()?;
-        snip::index_all_items(&conn)?;
+        index_all_items(&conn)?;
 
         // Lorem ipsum
         let id: Uuid = Uuid::try_parse(ID_STR)?;

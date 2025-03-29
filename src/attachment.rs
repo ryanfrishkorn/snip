@@ -6,7 +6,7 @@ use std::io::Read;
 use std::path::Path;
 use uuid::Uuid;
 
-use crate::snip::SnipError;
+use crate::error::SnipError;
 
 /// Attachment represents binary data attached to a document
 pub struct Attachment {
@@ -208,8 +208,8 @@ pub fn search_attachment_uuid(conn: &Connection, id_partial: &str) -> Result<Uui
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::snip::test_prep::*;
-    use crate::snip::SnipError;
+    use crate::error::SnipError;
+    use crate::test_prep::*;
     use std::fs;
 
     #[test]

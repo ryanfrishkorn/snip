@@ -1,4 +1,3 @@
-use crate::snip;
 use chrono::{DateTime, FixedOffset};
 use rusqlite::Connection;
 use rust_stemmers::Stemmer;
@@ -9,7 +8,9 @@ use std::io::Read;
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 
-use crate::snip::{Attachment, SnipAnalysis, SnipError, SnipWord, WordIndex};
+use crate::analysis::{SnipAnalysis, SnipWord, WordIndex};
+use crate::attachment::Attachment;
+use crate::error::SnipError;
 
 /// Snip is the main struct representing a document.
 pub struct Snip {
@@ -53,7 +54,7 @@ impl Snip {
 
         for row in query_iter.flatten() {
             let id = Uuid::try_parse(row.as_str())?;
-            let a = snip::get_attachment_from_uuid(conn, id)?;
+            let a = crate::attachment::get_attachment_from_uuid(conn, id)?;
             self.attachments.push(a);
         }
         Ok(())
@@ -705,8 +706,8 @@ pub fn uuid_list(conn: &Connection, limit: Option<usize>) -> Result<Vec<Uuid>, B
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::snip::get_attachment_from_uuid;
-    use crate::snip::test_prep::*;
+    use crate::attachment::get_attachment_from_uuid;
+    use crate::test_prep::*;
 
     #[test]
     fn test_collect_attachments() -> Result<(), Box<dyn Error>> {

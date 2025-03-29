@@ -16,13 +16,14 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>
 */
 
-pub mod snip;
-
-use crate::snip::{SearchMethod, SearchQuery, Snip, SnipAnalysis, SnipError};
 use clap::{Arg, ArgAction, Command};
 use colored::*;
 use rusqlite::{Connection, OpenFlags, Result};
 use rust_stemmers::{Algorithm, Stemmer};
+use snip::analysis::SnipAnalysis;
+use snip::doc::Snip;
+use snip::error::SnipError;
+use snip::search::{SearchMethod, SearchQuery};
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
@@ -357,7 +358,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         false => Connection::open(db_path)?,
     };
     // ensure that tables are present for basic functionality
-    snip::create_snip_tables(&conn)?;
+    snip::doc::create_snip_tables(&conn)?;
 
     // process all subcommands as in: https://docs.rs/clap/latest/clap/_derive/_cookbook/git/index.html
     // ADD
@@ -374,7 +375,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         // name from arg or generate from text
         let name: String = match sub_matches.get_one::<String>("name") {
             Some(v) => v.clone(),
-            None => snip::generate_name(&text, 6)?,
+            None => snip::doc::generate_name(&text, 6)?,
         };
 
         // create document
@@ -402,19 +403,19 @@ fn main() -> Result<(), Box<dyn Error>> {
             let id_str = attach_sub_matches
                 .get_one::<String>("snip_uuid")
                 .ok_or("parsing snip_uuid")?;
-            let snip_uuid = snip::search_uuid(&conn, id_str)?;
+            let snip_uuid = snip::search::search_uuid(&conn, id_str)?;
             // let snip_uuid = Uuid::try_parse(id.as_str())?;
 
             let files = attach_sub_matches.get_many::<String>("files");
             if let Some(files) = files {
                 // construct document (also verifies that the snip_uuid is present)
-                let s = snip::get_from_uuid(&conn, &snip_uuid)?;
+                let s = snip::doc::get_from_uuid(&conn, &snip_uuid)?;
                 println!("{} {}", s.uuid, s.name);
 
                 // add each file
                 for f in files {
                     let path = Path::new(f);
-                    snip::add_attachment(&conn, snip_uuid, path)?;
+                    snip::attachment::add_attachment(&conn, snip_uuid, path)?;
                     println!("  added {}", f);
                 }
             } else {
@@ -481,8 +482,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             if let Some(ids_str) = &ids_args {
                 let total = ids_str.len();
                 for (i, id_str) in ids_str.clone().enumerate() {
-                    let id = snip::search_attachment_uuid(&conn, id_str)?;
-                    let a = snip::get_attachment_from_uuid(&conn, id)?;
+                    let id = snip::attachment::search_attachment_uuid(&conn, id_str)?;
+                    let a = snip::attachment::get_attachment_from_uuid(&conn, id)?;
                     a.remove(&conn)?;
                     println!("[{}/{}] removed {} {}", i + 1, total, a.uuid, a.name);
                 }
@@ -501,8 +502,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     )))
                 }
             };
-            let id = snip::search_attachment_uuid(&conn, id_str)?;
-            let a = snip::get_attachment_from_uuid(&conn, id)?;
+            let id = snip::attachment::search_attachment_uuid(&conn, id_str)?;
+            let a = snip::attachment::get_attachment_from_uuid(&conn, id)?;
 
             // determine output path
             let arg_output = attach_sub_matches.get_one::<String>("output");
@@ -524,7 +525,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .ok_or("uuid not present")?;
 
         // search for unique uuid to allow partial string arg
-        let id = match snip::search_uuid(&conn, id_str) {
+        let id = match snip::search::search_uuid(&conn, id_str) {
             Ok(v) => v,
             Err(e) => {
                 match &e {
@@ -535,7 +536,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 return Ok(());
             }
         };
-        let mut s = snip::get_from_uuid(&conn, &id)?;
+        let mut s = snip::doc::get_from_uuid(&conn, &id)?;
 
         // check for raw or formatted output
         if let Some(raw) = sub_matches.get_one::<bool>("raw") {
@@ -570,8 +571,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             for file in files.into_iter() {
                 print!("importing {:?}...", file);
 
-                let mut s = snip::from_file(file)?;
-                if snip::get_from_uuid(&conn, &s.uuid).is_ok() {
+                let mut s = snip::doc::from_file(file)?;
+                if snip::doc::get_from_uuid(&conn, &s.uuid).is_ok() {
                     println!("refusing duplicate insert {}", s.uuid);
                     errors = true;
                     // proceed but notify of errors after iterations
@@ -593,15 +594,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     // INDEX
     if let Some(("index", _)) = matches.subcommand() {
         // creation is conditional on non-existence
-        snip::create_index_table(&conn)?;
+        snip::doc::create_index_table(&conn)?;
         // clear all data to ensure consistency
-        snip::clear_index(&conn)?;
+        snip::doc::clear_index(&conn)?;
 
-        let ids = snip::uuid_list(&conn, None)?;
+        let ids = snip::doc::uuid_list(&conn, None)?;
         let mut status_len: usize;
         eprint!("indexing...");
         for (i, id) in ids.iter().enumerate() {
-            let mut s = snip::get_from_uuid(&conn, id)?;
+            let mut s = snip::doc::get_from_uuid(&conn, id)?;
 
             // display status
             let status = format!("[{}/{}] {}", i + 1, &ids.len(), s.name);
@@ -670,7 +671,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             Some(v) => v.to_string(),
             None => return Err(Box::new(SnipError::General("missing uuid".to_string()))),
         };
-        let id = snip::search_uuid(&conn, id_str.as_str())?;
+        let id = snip::search::search_uuid(&conn, id_str.as_str())?;
 
         // new name
         let name = match sub_matches.get_one::<String>("name") {
@@ -678,7 +679,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             None => return Err(Box::new(SnipError::General("missing name".to_string()))),
         };
 
-        let mut s = snip::get_from_uuid(&conn, &id)?;
+        let mut s = snip::doc::get_from_uuid(&conn, &id)?;
         s.name = name;
 
         // write changes
@@ -692,9 +693,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             let ids_str: Vec<String> = args.map(|x| x.to_string()).collect();
             for (i, id_str) in ids_str.iter().enumerate() {
                 // obtain full id
-                let id = snip::search_uuid(&conn, id_str)?;
-                let s = snip::get_from_uuid(&conn, &id)?;
-                snip::remove_snip(&conn, id)?;
+                let id = snip::search::search_uuid(&conn, id_str)?;
+                let s = snip::doc::get_from_uuid(&conn, &id)?;
+                snip::doc::remove_snip(&conn, id)?;
                 println!("{}/{} removed {} {}", i + 1, ids_str.len(), id, s.name);
             }
         }
@@ -725,7 +726,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let mut uuids: Vec<Uuid> = Vec::new();
             if let Some(all_ids_str) = sub_matches.get_many::<String>("uuid") {
                 for id_str in all_ids_str {
-                    let id = snip::search_uuid(&conn, id_str)?;
+                    let id = snip::search::search_uuid(&conn, id_str)?;
                     uuids.push(id);
                 }
             }
@@ -767,7 +768,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 uuids,
                 limit,
             };
-            let search_results = match snip::search_structured(&conn, search_query) {
+            let search_results = match snip::search::search_structured(&conn, search_query) {
                 Ok(v) => v,
                 Err(e) => return Err(Box::new(e)),
             };
@@ -795,10 +796,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             // we don't need excerpts for count only
             if !sub_matches.get_flag("count") {
                 for item in &search_results.items {
-                    let mut s = snip::get_from_uuid(&conn, &item.uuid)?;
+                    let mut s = snip::doc::get_from_uuid(&conn, &item.uuid)?;
                     s.analyze()?;
                     println!("{}", s.name.white());
-                    print!("  {}", snip::split_uuid(&s.uuid)[0].bright_blue());
+                    print!("  {}", snip::doc::split_uuid(&s.uuid)[0].bright_blue());
 
                     // create and print a summary of terms and counts
                     let mut terms_summary: HashMap<String, usize> = HashMap::new();
@@ -854,7 +855,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(("split", sub_matches)) = matches.subcommand() {
         let input = match sub_matches.get_one::<String>("string") {
             Some(v) => v.to_owned(),
-            None => snip::read_lines_from_stdin()?,
+            None => snip::doc::read_lines_from_stdin()?,
         };
         let words = input.unicode_words();
         println!("{:?}", words.collect::<Vec<&str>>());
@@ -868,7 +869,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 max_terms = 0;
             }
         }
-        let stats = snip::stats_index(&conn)?;
+        let stats = snip::analysis::stats_index(&conn)?;
         println!("Terms:");
         println!("  indexed: {}", stats.terms_total);
         println!("  distinct: {}", stats.terms_unique);
@@ -890,7 +891,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(("stem", sub_matches)) = matches.subcommand() {
         let input = match sub_matches.get_one::<String>("words") {
             Some(v) => v.to_owned(),
-            None => snip::read_lines_from_stdin()?,
+            None => snip::doc::read_lines_from_stdin()?,
         };
         let words = input.unicode_words().collect::<Vec<&str>>();
         let stemmer = Stemmer::create(Algorithm::English);
@@ -904,9 +905,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     // UPDATE
     if let Some(("update", sub_matches)) = matches.subcommand() {
         if let Some(file) = sub_matches.get_one::<String>("file") {
-            let s = snip::from_file(file)?;
+            let s = snip::doc::from_file(file)?;
             s.update(&conn)?;
-            let mut s = snip::get_from_uuid(&conn, &s.uuid)?;
+            let mut s = snip::doc::get_from_uuid(&conn, &s.uuid)?;
             // re-index due to changed content
             s.index(&conn)?;
             eprintln!("update successful");
@@ -1003,7 +1004,7 @@ fn list_items(
     heading: ListHeading,
     limit: Option<usize>,
 ) -> Result<(), Box<dyn Error>> {
-    let ids = snip::uuid_list(conn, limit)?;
+    let ids = snip::doc::uuid_list(conn, limit)?;
 
     for id in ids {
         // establish required data
@@ -1014,7 +1015,7 @@ fn list_items(
 
         match heading.kind {
             ListHeadingKind::Document => {
-                let document = snip::get_from_uuid(conn, &id)?;
+                let document = snip::doc::get_from_uuid(conn, &id)?;
 
                 uuid = document.uuid;
                 time = document.timestamp.to_utc().to_string();
@@ -1022,7 +1023,7 @@ fn list_items(
                 name = document.name.clone();
             }
             ListHeadingKind::Attachment => {
-                let attachment = snip::get_attachment_from_uuid(conn, id)?;
+                let attachment = snip::attachment::get_attachment_from_uuid(conn, id)?;
 
                 uuid = attachment.uuid;
                 time = attachment.timestamp.to_string();
@@ -1047,7 +1048,7 @@ fn list_items(
             // eprintln!("prefix: {} suffix: {}", col.prefix, col.suffix);
             match col.name.as_str() {
                 "uuid" => match col.width {
-                    v if v <= 8 => print!("{} ", snip::split_uuid(&uuid)[0].bright_blue()),
+                    v if v <= 8 => print!("{} ", snip::doc::split_uuid(&uuid)[0].bright_blue()),
                     _ => print!("{} ", uuid.to_string().bright_blue()),
                 },
                 "size" => print!("{:>9} ", str),
@@ -1065,7 +1066,7 @@ fn list_attachments(
     heading: ListHeading,
     limit: Option<usize>,
 ) -> Result<(), Box<dyn Error>> {
-    let ids = snip::get_attachment_all(conn)?;
+    let ids = snip::attachment::get_attachment_all(conn)?;
 
     for (i, id) in ids.into_iter().enumerate() {
         if let Some(v) = limit {
@@ -1074,7 +1075,7 @@ fn list_attachments(
             }
         }
 
-        let attachment = snip::get_attachment_from_uuid(conn, id)?;
+        let attachment = snip::attachment::get_attachment_from_uuid(conn, id)?;
         let uuid = attachment.uuid;
         let uuid_document = attachment.snip_uuid;
         let time = attachment.timestamp.to_string();
@@ -1084,7 +1085,7 @@ fn list_attachments(
         for col in &heading.columns {
             let str = match col.name.as_str() {
                 "uuid" => uuid.to_string().bright_blue(),
-                "document" => snip::split_uuid(&uuid_document)[0]
+                "document" => snip::doc::split_uuid(&uuid_document)[0]
                     .to_string()
                     .bright_blue(),
                 "time" => time.bright_black(),
@@ -1099,7 +1100,7 @@ fn list_attachments(
             // eprintln!("prefix: {} suffix: {}", col.prefix, col.suffix);
             match col.name.as_str() {
                 "uuid" => match col.width {
-                    v if v <= 8 => print!("{} ", snip::split_uuid(&uuid)[0].bright_blue()),
+                    v if v <= 8 => print!("{} ", snip::doc::split_uuid(&uuid)[0].bright_blue()),
                     _ => print!("{} ", uuid.to_string().bright_blue()),
                 },
                 "size" => print!("{:>9} ", str),
