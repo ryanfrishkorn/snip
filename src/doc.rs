@@ -1,6 +1,7 @@
 use chrono::{DateTime, FixedOffset};
 use rusqlite::Connection;
 use rust_stemmers::Stemmer;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
 use std::io;
@@ -13,6 +14,7 @@ use crate::attachment::Attachment;
 use crate::error::SnipError;
 
 /// Snip is the main struct representing a document.
+#[derive(Serialize, Deserialize)]
 pub struct Snip {
     pub uuid: Uuid,
     pub name: String,

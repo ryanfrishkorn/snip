@@ -1,10 +1,11 @@
 use colored::*;
 use rusqlite::Connection;
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use unicode_segmentation::UnicodeSegmentation;
 
 /// Analysis of the document derived from
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SnipAnalysis {
     pub words: Vec<SnipWord>,
 }
@@ -68,7 +69,7 @@ pub struct ExcerptTerm {
 }
 
 /// Represents a word in the document, along with meta information derived from document analysis
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SnipWord {
     pub word: String,
     pub stem: String,
@@ -175,7 +176,7 @@ impl SnipAnalysis {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct WordIndex {
     pub count: u64,
     pub positions: Vec<u64>,
@@ -264,8 +265,7 @@ pub fn stats_index(conn: &Connection) -> Result<AnalysisStats, Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::snip;
-    use crate::snip::test_prep::*;
+    use crate::test_prep::*;
     use std::error::Error;
     use uuid::Uuid;
 
@@ -273,7 +273,7 @@ mod tests {
     fn test_get_term_context() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database().expect("preparing in-memory database");
         let id = Uuid::try_parse(ID_STR)?;
-        let mut s = snip::get_from_uuid(&conn, &id)?;
+        let mut s = crate::doc::get_from_uuid(&conn, &id)?;
         s.analyze()?;
         // println!("{}", s.text);
 
@@ -304,7 +304,7 @@ mod tests {
     #[test]
     fn test_stats_index() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database().expect("preparing in-memory database");
-        snip::index_all_items(&conn)?;
+        crate::doc::index_all_items(&conn)?;
 
         let stats = stats_index(&conn)?;
         println!("terms_total: {}", stats.terms_total);

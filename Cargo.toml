@@ -8,13 +8,14 @@ edition = "2021"
 test = false
 
 [dependencies]
-chrono = "0.4.26"
+chrono = { version = "0.4.26", features = ["serde"] }
 clap = { version = "4.3.10", features = ["unstable-doc"] }
 colored = "2.0.4"
 csv = "1.2.2"
 regex = "1.8.4"
 rusqlite = { version = "0.34.0", features = ["blob"] }
 rust-stemmers = "1.2.0"
+serde = { version = "1.0.219", features = ["derive"] }
 time = "0.3.2"
 unicode-segmentation = "1.10.1"
-uuid = { version = "1.4.0", features = ["v4", "fast-rng"]}
+uuid = { version = "1.4.0", features = ["v4", "fast-rng", "serde"] }

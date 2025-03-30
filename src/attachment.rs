@@ -1,5 +1,6 @@
 use chrono::{DateTime, FixedOffset};
 use rusqlite::{Connection, DatabaseName};
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs;
 use std::io::Read;
@@ -9,6 +10,7 @@ use uuid::Uuid;
 use crate::error::SnipError;
 
 /// Attachment represents binary data attached to a document
+#[derive(Serialize, Deserialize)]
 pub struct Attachment {
     pub uuid: Uuid,
     pub snip_uuid: Uuid,

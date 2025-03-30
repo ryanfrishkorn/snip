@@ -119,6 +119,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -585,6 +586,7 @@ dependencies = [
  "regex",
  "rusqlite",
  "rust-stemmers",
+ "serde",
  "time",
  "unicode-segmentation",
  "uuid",
@@ -674,6 +676,7 @@ checksum = "458f7a779bf54acc9f347480ac654f68407d3aab21269a6e3c9f922acd9e2da9"
 dependencies = [
  "getrandom",
  "rand",
+ "serde",
 ]
 
 [[package]]
