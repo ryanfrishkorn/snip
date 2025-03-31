@@ -12,8 +12,8 @@ use crate::error::SnipError;
 /// Attachment represents binary data attached to a document
 #[derive(Serialize, Deserialize)]
 pub struct Attachment {
-    pub uuid: Uuid,
-    pub snip_uuid: Uuid,
+    pub uuid: String,
+    pub snip_uuid: String,
     pub timestamp: DateTime<FixedOffset>,
     pub name: String,
     pub data: Vec<u8>,
@@ -73,8 +73,8 @@ fn attachment_from_db(
     let timestamp = DateTime::parse_from_rfc3339(timestamp.as_str())?;
 
     Ok(Attachment {
-        uuid,
-        snip_uuid,
+        uuid: uuid.to_string(),
+        snip_uuid: snip_uuid.to_string(),
         timestamp,
         name,
         size,
@@ -89,7 +89,7 @@ pub fn add_attachment(
     path: &Path,
 ) -> Result<(), Box<dyn Error>> {
     // check existence of file
-    let uuid = Uuid::new_v4();
+    let uuid = Uuid::new_v4().to_string();
     let timestamp_utc = chrono::Utc::now();
     let timestamp = timestamp_utc.fixed_offset();
     let name = path
@@ -103,7 +103,7 @@ pub fn add_attachment(
     // assign new Attachment
     let a = Attachment {
         uuid,
-        snip_uuid,
+        snip_uuid: snip_uuid.to_string(),
         timestamp,
         name,
         data,
@@ -129,7 +129,9 @@ pub fn add_attachment(
 }
 
 /// Get an attachment from database
-pub fn get_attachment_from_uuid(conn: &Connection, id: Uuid) -> Result<Attachment, Box<dyn Error>> {
+pub fn get_attachment_from_uuid(conn: &Connection, id: &str) -> Result<Attachment, Box<dyn Error>> {
+    // require uuid parse
+    let id = Uuid::parse_str(id)?;
     // get metadata
     let mut stmt = conn
         .prepare("SELECT uuid, snip_uuid, timestamp, name, size, rowid FROM snip_attachment WHERE uuid = :id")?;
@@ -226,7 +228,7 @@ mod test {
         // print out attachments to verify
         let attachments = get_attachment_all(&conn)?;
         for id in attachments {
-            let a = get_attachment_from_uuid(&conn, id)?;
+            let a = get_attachment_from_uuid(&conn, &id.to_string())?;
             println!(
                 "uuid: {} snip_uud: {} size: {} name: {}",
                 a.uuid, a.snip_uuid, a.size, a.name
@@ -239,8 +241,10 @@ mod test {
     fn test_get_attachment_from_uuid() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database().expect("preparing in-memory database");
 
-        let id = Uuid::try_parse(ID_ATTACH_STR).expect("parsing attachment uuid string");
-        let a = get_attachment_from_uuid(&conn, id)?;
+        let id = Uuid::try_parse(ID_ATTACH_STR)
+            .expect("parsing attachment uuid string")
+            .to_string();
+        let a = get_attachment_from_uuid(&conn, &id)?;
 
         if a.uuid != id {
             return Err(Box::new(SnipError::UuidNotFound(
@@ -255,11 +259,11 @@ mod test {
         let conn = prepare_database().expect("preparing in-memory database");
 
         let id = Uuid::try_parse(ID_ATTACH_STR)?;
-        let a = get_attachment_from_uuid(&conn, id)?;
+        let a = get_attachment_from_uuid(&conn, &id.to_string())?;
         a.remove(&conn)?;
 
         // attempt to retrieve again - should be missing
-        if get_attachment_from_uuid(&conn, id).is_ok() {
+        if get_attachment_from_uuid(&conn, &id.to_string()).is_ok() {
             return Err(Box::new(SnipError::General(
                 "found attachment in database after attempted removal".to_string(),
             )));
@@ -303,8 +307,8 @@ mod test {
     fn test_attachment_write() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database()?;
 
-        let id = Uuid::try_parse(ID_ATTACH_STR)?;
-        let a = get_attachment_from_uuid(&conn, id)?;
+        let id = Uuid::try_parse(ID_ATTACH_STR)?.to_string();
+        let a = get_attachment_from_uuid(&conn, &id)?;
 
         let output_default = a.name.as_str();
         let output_named = "test_lorem_ipsum.pdf";

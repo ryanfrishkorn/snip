@@ -319,7 +319,7 @@ pub fn search_uuid(conn: &Connection, id_partial: &str) -> Result<Uuid, SnipErro
 }
 
 #[cfg(test)]
-mod tests {
+mod test {
     use super::*;
     use crate::doc::index_all_items;
     use crate::test_prep::*;

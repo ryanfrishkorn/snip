@@ -16,7 +16,7 @@ use crate::error::SnipError;
 /// Snip is the main struct representing a document.
 #[derive(Serialize, Deserialize)]
 pub struct Snip {
-    pub uuid: Uuid,
+    pub uuid: String,
     pub name: String,
     pub text: String,
     pub timestamp: DateTime<FixedOffset>,
@@ -25,6 +25,13 @@ pub struct Snip {
 }
 
 impl Snip {
+    pub fn uuid(&self) -> Result<Uuid, SnipError> {
+        match Uuid::parse_str(&self.uuid) {
+            Ok(v) => Ok(v),
+            Err(e) => Err(SnipError::General(format!("could not parse uuid: {}", e))),
+        }
+    }
+
     pub fn analyze(&mut self) -> Result<(), SnipError> {
         self.split_words()?;
         self.stem_words()?;
@@ -56,7 +63,7 @@ impl Snip {
 
         for row in query_iter.flatten() {
             let id = Uuid::try_parse(row.as_str())?;
-            let a = crate::attachment::get_attachment_from_uuid(conn, id)?;
+            let a = crate::attachment::get_attachment_from_uuid(conn, &id.to_string())?;
             self.attachments.push(a);
         }
         Ok(())
@@ -414,7 +421,7 @@ pub fn from_file(path: &str) -> Result<Snip, Box<dyn Error>> {
     // The attachment vector is inconsequential for editing purposes. The database should reflect
     // the associations between documents and their attachments.
     let s = Snip {
-        uuid: header.uuid,
+        uuid: header.uuid.to_string(),
         name: header.name,
         timestamp: header.timestamp,
         analysis: SnipAnalysis { words: Vec::new() },
@@ -456,7 +463,7 @@ pub fn generate_name(text: &str, count: usize) -> Result<String, Box<dyn Error>>
 }
 
 /// Get the snip specified matching the given full-length uuid string
-pub fn get_from_uuid(conn: &Connection, id: &Uuid) -> Result<Snip, Box<dyn Error>> {
+pub fn get_from_uuid(conn: &Connection, id: &str) -> Result<Snip, Box<dyn Error>> {
     let mut stmt = conn.prepare("SELECT uuid, timestamp, name, data FROM snip WHERE uuid = :id")?;
     let rows = stmt.query_and_then(&[(":id", &id.to_string())], |row| {
         snip_from_db(row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)
@@ -605,8 +612,8 @@ pub fn read_lines_from_stdin() -> Result<String, Box<dyn Error>> {
 }
 
 /// Remove a document matching given uuid
-pub fn remove_snip(conn: &Connection, id: Uuid) -> Result<(), Box<dyn Error>> {
-    let mut s = get_from_uuid(conn, &id)?;
+pub fn remove_snip(conn: &Connection, id: &str) -> Result<(), Box<dyn Error>> {
+    let mut s = get_from_uuid(conn, id)?;
     // collect and remove attachments
     s.collect_attachments(conn)?;
     for a in &s.attachments {
@@ -643,7 +650,7 @@ fn snip_from_db(
     };
 
     let uuid = match Uuid::try_parse(id.as_str()) {
-        Ok(v) => v,
+        Ok(v) => v.to_string(),
         Err(e) => return Err(Box::new(e)),
     };
 
@@ -657,8 +664,8 @@ fn snip_from_db(
     })
 }
 
-pub fn split_uuid(uuid: &Uuid) -> Vec<String> {
-    uuid.to_string().split('-').map(|s| s.to_string()).collect()
+pub fn split_uuid(uuid: &str) -> Vec<String> {
+    uuid.split('-').map(|s| s.to_string()).collect()
 }
 
 pub fn strip_punctuation(s: &str) -> &str {
@@ -706,7 +713,7 @@ pub fn uuid_list(conn: &Connection, limit: Option<usize>) -> Result<Vec<Uuid>, B
 }
 
 #[cfg(test)]
-mod tests {
+mod test {
     use super::*;
     use crate::attachment::get_attachment_from_uuid;
     use crate::test_prep::*;
@@ -714,7 +721,7 @@ mod tests {
     #[test]
     fn test_collect_attachments() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database().expect("preparing in-memory database");
-        let id = Uuid::try_parse(ID_STR)?;
+        let id = Uuid::try_parse(ID_STR)?.to_string();
         let mut s = get_from_uuid(&conn, &id)?;
         assert_eq!(s.attachments.len(), 0);
 
@@ -751,7 +758,7 @@ mod tests {
         let conn = prepare_database().expect("preparing in-memory database");
         let id = Uuid::try_parse(ID_STR).expect("parsing uuid from static string");
 
-        let _s = get_from_uuid(&conn, &id)?;
+        let _s = get_from_uuid(&conn, &id.to_string())?;
         Ok(())
     }
 
@@ -759,7 +766,7 @@ mod tests {
     fn test_index_snip() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database().expect("preparing in-memory database");
         let id = Uuid::try_parse(ID_STR)?;
-        let mut s = get_from_uuid(&conn, &id)?;
+        let mut s = get_from_uuid(&conn, &id.to_string())?;
 
         s.index(&conn)?;
         // check data
@@ -806,11 +813,11 @@ mod tests {
     #[test]
     fn test_insert_new() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database().expect("preparing in-memory database");
-        let id = Uuid::new_v4();
+        let id = Uuid::new_v4().to_string();
 
         let s = Snip {
             name: "Test".to_string(),
-            uuid: id,
+            uuid: id.clone(),
             timestamp: chrono::Local::now().fixed_offset(),
             text: "Test Data".to_string(),
             analysis: SnipAnalysis { words: Vec::new() },
@@ -820,14 +827,14 @@ mod tests {
 
         // verify
         let mut stmt = conn.prepare("SELECT uuid FROM snip WHERE uuid = ?")?;
-        let mut rows = stmt.query([id.to_string()])?;
+        let mut rows = stmt.query([s.uuid])?;
         while let Some(row) = rows.next()? {
             let id_str: String = row.get(0)?;
             let id_check: Uuid = match Uuid::parse_str(id_str.as_str()) {
                 Ok(v) => v,
                 Err(e) => panic!("{}", e),
             };
-            assert_eq!(id, id_check);
+            assert_eq!(id, id_check.to_string());
         }
 
         Ok(())
@@ -859,12 +866,12 @@ mod tests {
     #[test]
     fn test_remove_snip() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database().expect("preparing in-memory database");
-        let id = Uuid::try_parse(ID_STR)?;
-        let attachment_id = Uuid::try_parse(ID_ATTACH_STR)?;
-        remove_snip(&conn, id)?;
+        let id = Uuid::try_parse(ID_STR)?.to_string();
+        let attachment_id = Uuid::try_parse(ID_ATTACH_STR)?.to_string();
+        remove_snip(&conn, &id)?;
 
         // verify attachment was deleted
-        if get_attachment_from_uuid(&conn, attachment_id).is_ok() {
+        if get_attachment_from_uuid(&conn, &attachment_id).is_ok() {
             return Err(Box::new(SnipError::General(
                 "attachment is still present after snip deletion call".to_string(),
             )));
@@ -882,11 +889,11 @@ mod tests {
     #[test]
     fn test_insert() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database()?;
-        let id = Uuid::try_parse(ID_STR)?;
+        let id = Uuid::try_parse(ID_STR)?.to_string();
 
         let s = get_from_uuid(&conn, &id)?;
         // first remove from database
-        remove_snip(&conn, id)?;
+        remove_snip(&conn, &id)?;
 
         // verify removal
         if get_from_uuid(&conn, &id).is_ok() {
@@ -905,11 +912,11 @@ mod tests {
     #[test]
     fn test_update() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database()?;
-        let id = Uuid::try_parse(ID_STR)?;
+        let id = Uuid::try_parse(ID_STR)?.to_string();
 
         // this is the data that will be written
         let expect = Snip {
-            uuid: id,
+            uuid: id.clone(),
             name: "Test Name".to_string(),
             text: "Test Text".to_string(),
             timestamp: chrono::Local::now().fixed_offset(),

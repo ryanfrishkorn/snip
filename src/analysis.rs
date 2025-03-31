@@ -263,7 +263,7 @@ pub fn stats_index(conn: &Connection) -> Result<AnalysisStats, Box<dyn Error>> {
 }
 
 #[cfg(test)]
-mod tests {
+mod test {
     use super::*;
     use crate::test_prep::*;
     use std::error::Error;
@@ -273,7 +273,7 @@ mod tests {
     fn test_get_term_context() -> Result<(), Box<dyn Error>> {
         let conn = prepare_database().expect("preparing in-memory database");
         let id = Uuid::try_parse(ID_STR)?;
-        let mut s = crate::doc::get_from_uuid(&conn, &id)?;
+        let mut s = crate::doc::get_from_uuid(&conn, &id.to_string())?;
         s.analyze()?;
         // println!("{}", s.text);
 

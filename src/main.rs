@@ -380,7 +380,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         // create document
         let mut s = Snip {
-            uuid: Uuid::new_v4(),
+            uuid: Uuid::new_v4().to_string(),
             name: name.to_owned(),
             timestamp: chrono::Local::now().fixed_offset(),
             text,
@@ -409,7 +409,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let files = attach_sub_matches.get_many::<String>("files");
             if let Some(files) = files {
                 // construct document (also verifies that the snip_uuid is present)
-                let s = snip::doc::get_from_uuid(&conn, &snip_uuid)?;
+                let s = snip::doc::get_from_uuid(&conn, &snip_uuid.to_string())?;
                 println!("{} {}", s.uuid, s.name);
 
                 // add each file
@@ -482,8 +482,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             if let Some(ids_str) = &ids_args {
                 let total = ids_str.len();
                 for (i, id_str) in ids_str.clone().enumerate() {
-                    let id = snip::attachment::search_attachment_uuid(&conn, id_str)?;
-                    let a = snip::attachment::get_attachment_from_uuid(&conn, id)?;
+                    let id = snip::attachment::search_attachment_uuid(&conn, id_str)?.to_string();
+                    let a = snip::attachment::get_attachment_from_uuid(&conn, &id)?;
                     a.remove(&conn)?;
                     println!("[{}/{}] removed {} {}", i + 1, total, a.uuid, a.name);
                 }
@@ -502,8 +502,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     )))
                 }
             };
-            let id = snip::attachment::search_attachment_uuid(&conn, id_str)?;
-            let a = snip::attachment::get_attachment_from_uuid(&conn, id)?;
+            let id = snip::attachment::search_attachment_uuid(&conn, id_str)?.to_string();
+            let a = snip::attachment::get_attachment_from_uuid(&conn, &id)?;
 
             // determine output path
             let arg_output = attach_sub_matches.get_one::<String>("output");
@@ -526,7 +526,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         // search for unique uuid to allow partial string arg
         let id = match snip::search::search_uuid(&conn, id_str) {
-            Ok(v) => v,
+            Ok(v) => v.to_string(),
             Err(e) => {
                 match &e {
                     SnipError::UuidNotFound(s) => println!("{}", s),
@@ -602,7 +602,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut status_len: usize;
         eprint!("indexing...");
         for (i, id) in ids.iter().enumerate() {
-            let mut s = snip::doc::get_from_uuid(&conn, id)?;
+            let mut s = snip::doc::get_from_uuid(&conn, &id.to_string())?;
 
             // display status
             let status = format!("[{}/{}] {}", i + 1, &ids.len(), s.name);
@@ -679,7 +679,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             None => return Err(Box::new(SnipError::General("missing name".to_string()))),
         };
 
-        let mut s = snip::doc::get_from_uuid(&conn, &id)?;
+        let mut s = snip::doc::get_from_uuid(&conn, &id.to_string())?;
         s.name = name;
 
         // write changes
@@ -694,8 +694,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             for (i, id_str) in ids_str.iter().enumerate() {
                 // obtain full id
                 let id = snip::search::search_uuid(&conn, id_str)?;
-                let s = snip::doc::get_from_uuid(&conn, &id)?;
-                snip::doc::remove_snip(&conn, id)?;
+                let s = snip::doc::get_from_uuid(&conn, &id.to_string())?;
+                snip::doc::remove_snip(&conn, &id.to_string())?;
                 println!("{}/{} removed {} {}", i + 1, ids_str.len(), id, s.name);
             }
         }
@@ -796,10 +796,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             // we don't need excerpts for count only
             if !sub_matches.get_flag("count") {
                 for item in &search_results.items {
-                    let mut s = snip::doc::get_from_uuid(&conn, &item.uuid)?;
+                    let mut s = snip::doc::get_from_uuid(&conn, &item.uuid.to_string())?;
                     s.analyze()?;
                     println!("{}", s.name.white());
-                    print!("  {}", snip::doc::split_uuid(&s.uuid)[0].bright_blue());
+                    print!(
+                        "  {}",
+                        snip::doc::split_uuid(&s.uuid()?.to_string())[0].bright_blue()
+                    );
 
                     // create and print a summary of terms and counts
                     let mut terms_summary: HashMap<String, usize> = HashMap::new();
@@ -1008,14 +1011,14 @@ fn list_items(
 
     for id in ids {
         // establish required data
-        let uuid: Uuid;
+        let uuid: String;
         let time: String;
         let size: String;
         let name: String;
 
         match heading.kind {
             ListHeadingKind::Document => {
-                let document = snip::doc::get_from_uuid(conn, &id)?;
+                let document = snip::doc::get_from_uuid(conn, &id.to_string())?;
 
                 uuid = document.uuid;
                 time = document.timestamp.to_utc().to_string();
@@ -1023,7 +1026,7 @@ fn list_items(
                 name = document.name.clone();
             }
             ListHeadingKind::Attachment => {
-                let attachment = snip::attachment::get_attachment_from_uuid(conn, id)?;
+                let attachment = snip::attachment::get_attachment_from_uuid(conn, &id.to_string())?;
 
                 uuid = attachment.uuid;
                 time = attachment.timestamp.to_string();
@@ -1075,7 +1078,7 @@ fn list_attachments(
             }
         }
 
-        let attachment = snip::attachment::get_attachment_from_uuid(conn, id)?;
+        let attachment = snip::attachment::get_attachment_from_uuid(conn, &id.to_string())?;
         let uuid = attachment.uuid;
         let uuid_document = attachment.snip_uuid;
         let time = attachment.timestamp.to_string();
