@@ -1,4 +1,4 @@
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, Utc};
 use rusqlite::Connection;
 use rust_stemmers::Stemmer;
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ pub struct Snip {
     pub uuid: Uuid,
     pub name: String,
     pub text: String,
-    pub timestamp: DateTime<FixedOffset>,
+    pub timestamp: DateTime<Utc>,
     pub analysis: SnipAnalysis,
     pub attachments: Vec<Attachment>,
 }
@@ -335,7 +335,7 @@ impl Snip {
 struct SnipHeader {
     uuid: Uuid,
     name: String,
-    timestamp: DateTime<FixedOffset>,
+    timestamp: DateTime<Utc>,
 }
 
 /// Clear the search index
@@ -543,7 +543,7 @@ fn parse_header(data: &str) -> Result<SnipHeader, Box<dyn Error>> {
 
     let uuid = Uuid::try_parse(uuid_parsed.as_str())?;
     let name = name_parsed.to_string();
-    let timestamp = DateTime::parse_from_rfc3339(timestamp_parsed.as_str())?;
+    let timestamp = DateTime::parse_from_rfc3339(timestamp_parsed.as_str())?.to_utc();
 
     let header = SnipHeader {
         uuid,
@@ -638,7 +638,7 @@ fn snip_from_db(
     text: String,
 ) -> Result<Snip, Box<dyn Error>> {
     let timestamp = match DateTime::parse_from_rfc3339(ts.as_str()) {
-        Ok(v) => v,
+        Ok(v) => v.to_utc(),
         Err(e) => return Err(Box::new(e)),
     };
 
@@ -811,7 +811,8 @@ mod tests {
         let s = Snip {
             name: "Test".to_string(),
             uuid: id,
-            timestamp: chrono::Local::now().fixed_offset(),
+            // timestamp: chrono::Local::now().fixed_offset(),
+            timestamp: Utc::now(),
             text: "Test Data".to_string(),
             analysis: SnipAnalysis { words: Vec::new() },
             attachments: Vec::new(),
@@ -912,7 +913,7 @@ mod tests {
             uuid: id,
             name: "Test Name".to_string(),
             text: "Test Text".to_string(),
-            timestamp: chrono::Local::now().fixed_offset(),
+            timestamp: chrono::Utc::now(),
             analysis: SnipAnalysis { words: Vec::new() }, // dynamic data, not database
             attachments: Vec::new(),                      // dynamic data, not database
         };

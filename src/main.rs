@@ -382,7 +382,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut s = Snip {
             uuid: Uuid::new_v4(),
             name: name.to_owned(),
-            timestamp: chrono::Local::now().fixed_offset(),
+            timestamp: chrono::Utc::now(),
             text,
             analysis: SnipAnalysis { words: vec![] },
             attachments: Vec::new(),

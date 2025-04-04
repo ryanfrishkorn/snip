@@ -1,4 +1,4 @@
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, Utc};
 use rusqlite::{Connection, DatabaseName};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -14,7 +14,7 @@ use crate::error::SnipError;
 pub struct Attachment {
     pub uuid: Uuid,
     pub snip_uuid: Uuid,
-    pub timestamp: DateTime<FixedOffset>,
+    pub timestamp: DateTime<Utc>,
     pub name: String,
     pub data: Vec<u8>,
     pub size: usize,
@@ -70,7 +70,7 @@ fn attachment_from_db(
 ) -> Result<Attachment, Box<dyn Error>> {
     let uuid = Uuid::try_parse(uuid.as_str())?;
     let snip_uuid = Uuid::try_parse(snip_uuid.as_str())?;
-    let timestamp = DateTime::parse_from_rfc3339(timestamp.as_str())?;
+    let timestamp = DateTime::parse_from_rfc3339(timestamp.as_str())?.to_utc();
 
     Ok(Attachment {
         uuid,
@@ -90,8 +90,7 @@ pub fn add_attachment(
 ) -> Result<(), Box<dyn Error>> {
     // check existence of file
     let uuid = Uuid::new_v4();
-    let timestamp_utc = chrono::Utc::now();
-    let timestamp = timestamp_utc.fixed_offset();
+    let timestamp = chrono::Utc::now();
     let name = path
         .file_name()
         .ok_or("parsing attachment basename")?
