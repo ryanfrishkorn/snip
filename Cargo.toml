@@ -2,6 +2,9 @@
 name = "snip"
 version = "0.1.1"
 edition = "2021"
+build = "src/build.rs"
+authors = ["Ryan Frishkorn <ryan@bluerift.io>"]
+description = "A simple personal data tool for snippets of information"
 
 [lib]
 # Prevent duplicate tests given current structure
