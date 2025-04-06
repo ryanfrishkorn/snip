@@ -33,8 +33,16 @@ use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let version_info = format!(
+        "{} ({})\n{}",
+        env!("CARGO_PKG_VERSION"),
+        env!("GIT_HASH"),
+        env!("CARGO_PKG_AUTHORS")
+    );
     let cmd = Command::new("snip")
         .bin_name("snip")
+        .author(env!("CARGO_PKG_AUTHORS"))
+        .long_version(&version_info)
         .arg_required_else_help(true)
         .arg(
             Arg::new("read-only")
