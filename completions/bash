@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+
+# Snip utility bash completion script
+# Ryan Frishkorn <ryan@bluerift.io>
+
+__comp_snip() {
+    local actions
+    local hashes
+
+    actions="add attach get help import index ls rename rm search split stats stem update"
+
+    # no subcommand specified
+    if [[ -z "${COMP_WORDS[1]}" ]]; then
+        for a in $actions; do
+            COMPREPLY+=("${a}")
+        done
+        return 0
+    fi
+
+    # partial subcommand
+    if [[ ${#COMP_WORDS[@]} == 2 ]]; then
+        local partial_subcommand
+        partial_subcommand="${COMP_WORDS[1]}"
+        for a in $actions; do
+            if [[ "${a}" =~ ^${partial_subcommand}.* ]]; then
+                COMPREPLY+=("${a}")
+            fi
+        done
+        return 0
+    fi
+
+    # GET / RENAME / RM
+    if  [[ "${COMP_WORDS[1]}" == "get" ]] || \
+        [[ "${COMP_WORDS[1]}" == "rename" ]] || \
+        [[ "${COMP_WORDS[1]}" == "rm" ]]; then
+        # gather all hashes
+        hashes=$(snip ls -a | cut -d ' ' -f 1)
+        # partial hash match
+        if [[ -n "${COMP_WORDS[2]}" ]]; then
+            local partial_hash
+            partial_hash="${COMP_WORDS[2]}"
+            for h in $hashes; do
+                if [[ "${h}" =~ ^${partial_hash}.* ]]; then
+                    COMPREPLY+=("${h}")
+                fi
+            done
+            return 0
+        else
+            # push all hashes
+            for h in $hashes; do
+                COMPREPLY+=("${h}")
+            done
+        fi
+    fi
+
+    # UPDATE
+    if [[ "${COMP_WORDS[1]}" == "update" ]]; then
+        local cur
+        cur=${COMP_WORDS[COMP_CWORD]}
+        mapfile -t COMPREPLY < <(compgen -o plusdirs -f -- "${cur}")
+        return 0
+    fi
+
+    return 0
+}
+
+# load function
+complete -o filenames -F __comp_snip snip

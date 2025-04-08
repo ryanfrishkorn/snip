@@ -85,6 +85,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                 ),
         )
         .subcommand(
+            Command::new("completion")
+                .arg_required_else_help(true)
+                .arg(Arg::new("shell").help("shell name")),
+        )
+        .subcommand(
             Command::new("rename")
                 .about("Rename document")
                 .arg_required_else_help(true)
@@ -350,6 +355,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 ),
         );
 
+    // completion script embeds
+    let completion_bash = include_bytes!("../completions/bash");
     let matches = cmd.get_matches();
     let db_file_default = ".snip.sqlite3".to_string();
     let home_dir = match env::var("HOME") {
@@ -523,6 +530,16 @@ fn main() -> Result<(), Box<dyn Error>> {
             // write file
             a.write(&output)?;
             println!("{} written ({} bytes)", output, a.size);
+        }
+    }
+
+    // COMPLETION
+    if let Some(("completion", sub_matches)) = matches.subcommand() {
+        let shell_name = sub_matches
+            .get_one::<String>("shell")
+            .ok_or("shell name not provided")?;
+        if shell_name == "bash" {
+            println!("{}", std::str::from_utf8(completion_bash)?);
         }
     }
 
