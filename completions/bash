@@ -53,8 +53,8 @@ __comp_snip() {
         fi
     fi
 
-    # UPDATE
-    if [[ "${COMP_WORDS[1]}" == "update" ]]; then
+    # IMPORT / UPDATE
+    if [[ "${COMP_WORDS[1]}" == "import" ]] || [[ "${COMP_WORDS[1]}" == "update" ]]; then
         local cur
         cur=${COMP_WORDS[COMP_CWORD]}
         mapfile -t COMPREPLY < <(compgen -o plusdirs -f -- "${cur}")
