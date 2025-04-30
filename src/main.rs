@@ -128,10 +128,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                         )
                         .arg(
                             Arg::new("number")
-                                .help("number of documents to list")
+                                .help("number of attachments to list")
                                 .short('n')
                                 .num_args(1)
-                                .default_value("20")
                                 .action(ArgAction::Append),
                         )
                         .arg(
